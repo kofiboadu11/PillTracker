@@ -9,7 +9,7 @@ import { getMedications, markAsTaken } from '../firebase/medications';
 
 export default function DashboardScreen() {
   const [medications, setMedications] = useState<any[]>([]);
-  const [takenMeds, setTakenMeds] = useState({});
+  const [takenMeds, setTakenMeds] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
 
   const userName = auth.currentUser?.displayName?.split(' ')[0] || 'there';
@@ -35,7 +35,7 @@ export default function DashboardScreen() {
     loadMeds();
   }, []);
 
-  const handleMarkTaken = async (medId) => {
+  const handleMarkTaken = async (medId:string) => {
     try {
       await markAsTaken(medId);
       setTakenMeds(prev => ({ ...prev, [medId]: true }));

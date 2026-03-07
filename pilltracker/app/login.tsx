@@ -41,7 +41,12 @@ export default function LoginScreen() {
         Alert.alert('Wrong password', 'Incorrect password. Please try again.');
       } else if (error.code === 'auth/invalid-email') {
         Alert.alert('Invalid email', 'Please enter a valid email address.');
-      } else {
+      }
+        else if (error.code === 'auth/invalid-credential') {
+        Alert.alert('Login Failed', 'Invalid Email/Password');
+      }
+      
+      else {
         Alert.alert('Login failed', error.message);
       }
     } finally {

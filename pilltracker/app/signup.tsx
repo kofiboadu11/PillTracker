@@ -36,9 +36,8 @@ export default function SignUpScreen() {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       await updateProfile(userCredential.user, { displayName: fullName });
-      // Navigate to Add Medication after successful sign up
       // @ts-ignore
-      router.push('/add-medication');
+      router.push('/dashboard');
     } catch (error: any) {
       Alert.alert('Sign up failed', error.message);
     } finally {

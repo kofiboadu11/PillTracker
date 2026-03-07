@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
+
 import {
   View, Text, TouchableOpacity, StyleSheet,
   SafeAreaView, ScrollView, Alert
 } from 'react-native';
 import { router } from 'expo-router';
 import { auth } from '../firebase/config';
-import { getMedications, markAsTaken } from '../firebase/medications';
+import { getMedications, toggleMedication, getAdherenceForDate } from '../firebase/medications';
 
 export default function DashboardScreen() {
   const [medications, setMedications] = useState<any[]>([]);
@@ -22,29 +23,35 @@ export default function DashboardScreen() {
   };
 
   useEffect(() => {
-    const loadMeds = async () => {
-      try {
-        const meds = await getMedications();
-        setMedications(meds);
-      } catch (error) {
-        Alert.alert('Error', 'Could not load medications.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadMeds();
-  }, []);
-
-  const handleMarkTaken = async (medId:string) => {
+  const loadData = async () => {
     try {
-      await markAsTaken(medId);
-      setTakenMeds(prev => ({ ...prev, [medId]: true }));
+      const meds = await getMedications();
+      setMedications(meds);
+
+      // Load today's taken status from Firestore
+      const today = new Date().toISOString().split('T')[0];
+      const adherence = await getAdherenceForDate(today);
+      setTakenMeds(adherence);
     } catch (error) {
-      Alert.alert('Error', 'Could not mark as taken.');
+      Alert.alert('Error', 'Could not load medications.');
+    } finally {
+      setLoading(false);
     }
   };
+  loadData();
+}, []);
 
-  const takenCount = Object.keys(takenMeds).length;
+  const handleMarkTaken = async (medId: string) => {
+  try {
+    const newValue = !takenMeds[medId];
+    await toggleMedication(medId, newValue);
+    setTakenMeds(prev => ({ ...prev, [medId]: newValue }));
+  } catch (error) {
+    Alert.alert('Error', 'Could not update medication status.');
+  }
+};
+
+  const takenCount = Object.values(takenMeds).filter(Boolean).length;
   const totalCount = medications.length;
   const progressPercent = totalCount > 0 ? (takenCount / totalCount) * 100 : 0;
 
@@ -89,12 +96,11 @@ export default function DashboardScreen() {
                 <Text style={styles.medDetails}>{med.dosage} · {med.times?.[0]}</Text>
               </View>
               <TouchableOpacity
-                style={[styles.checkButton, takenMeds[med.id] && styles.checkButtonDone]}
-                onPress={() => handleMarkTaken(med.id)}
-                disabled={takenMeds[med.id]}
-              >
-                {takenMeds[med.id] && <Text style={styles.checkMark}>✓</Text>}
-              </TouchableOpacity>
+              style={[styles.checkButton, takenMeds[med.id] && styles.checkButtonDone]}
+              onPress={() => handleMarkTaken(med.id)}
+            >
+              {takenMeds[med.id] && <Text style={styles.checkMark}>✓</Text>}
+            </TouchableOpacity>
             </View>
           ))
         )}

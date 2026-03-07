@@ -70,3 +70,11 @@ export const getWeeklyAdherence = async () => {
 
   return results;
 };
+
+
+export const toggleMedication = async (medId, value) => {
+  const uid = getUID();
+  const today = new Date().toISOString().split('T')[0];
+  const ref = doc(db, 'users', uid, 'adherence', today);
+  await setDoc(ref, { [medId]: value }, { merge: true });
+};

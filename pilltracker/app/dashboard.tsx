@@ -2,16 +2,18 @@ import React, { useEffect, useState } from 'react';
 
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  SafeAreaView, ScrollView, Alert
+  SafeAreaView, ScrollView, Alert, Modal
 } from 'react-native';
 import { router } from 'expo-router';
 import { auth } from '../firebase/config';
+import { signOut } from "firebase/auth";
 import { getMedications, toggleMedication, getAdherenceForDate } from '../firebase/medications';
 
 export default function DashboardScreen() {
   const [medications, setMedications] = useState<any[]>([]);
   const [takenMeds, setTakenMeds] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
+  const [profileMenuVisible, setProfileMenuVisible] = useState(false);
 
   const userName = auth.currentUser?.displayName?.split(' ')[0] || 'there';
 
@@ -23,33 +25,42 @@ export default function DashboardScreen() {
   };
 
   useEffect(() => {
-  const loadData = async () => {
-    try {
-      const meds = await getMedications();
-      setMedications(meds);
+    const loadData = async () => {
+      try {
+        const meds = await getMedications();
+        setMedications(meds);
 
-      // Load today's taken status from Firestore
-      const today = new Date().toISOString().split('T')[0];
-      const adherence = await getAdherenceForDate(today);
-      setTakenMeds(adherence);
-    } catch (error) {
-      Alert.alert('Error', 'Could not load medications.');
-    } finally {
-      setLoading(false);
-    }
-  };
-  loadData();
-}, []);
+        const today = new Date().toISOString().split('T')[0];
+        const adherence = await getAdherenceForDate(today);
+        setTakenMeds(adherence);
+      } catch (error) {
+        Alert.alert('Error', 'Could not load medications.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  }, []);
 
   const handleMarkTaken = async (medId: string) => {
-  try {
-    const newValue = !takenMeds[medId];
-    await toggleMedication(medId, newValue);
-    setTakenMeds(prev => ({ ...prev, [medId]: newValue }));
-  } catch (error) {
-    Alert.alert('Error', 'Could not update medication status.');
-  }
-};
+    try {
+      const newValue = !takenMeds[medId];
+      await toggleMedication(medId, newValue);
+      setTakenMeds(prev => ({ ...prev, [medId]: newValue }));
+    } catch (error) {
+      Alert.alert('Error', 'Could not update medication status.');
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setProfileMenuVisible(false);
+      router.replace('/login');
+    } catch (error) {
+      Alert.alert('Error', 'Could not log out.');
+    }
+  };
 
   const takenCount = Object.values(takenMeds).filter(Boolean).length;
   const totalCount = medications.length;
@@ -96,15 +107,78 @@ export default function DashboardScreen() {
                 <Text style={styles.medDetails}>{med.dosage} · {med.times?.[0]}</Text>
               </View>
               <TouchableOpacity
-              style={[styles.checkButton, takenMeds[med.id] && styles.checkButtonDone]}
-              onPress={() => handleMarkTaken(med.id)}
-            >
-              {takenMeds[med.id] && <Text style={styles.checkMark}>✓</Text>}
-            </TouchableOpacity>
+                style={[styles.checkButton, takenMeds[med.id] && styles.checkButtonDone]}
+                onPress={() => handleMarkTaken(med.id)}
+              >
+                {takenMeds[med.id] && <Text style={styles.checkMark}>✓</Text>}
+              </TouchableOpacity>
             </View>
           ))
         )}
       </ScrollView>
+
+      <Modal
+        visible={profileMenuVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setProfileMenuVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setProfileMenuVisible(false)}
+        >
+          <View style={styles.profileMenu}>
+            <Text style={styles.profileName}>
+              {auth.currentUser?.displayName || 'User'}
+            </Text>
+            <Text style={styles.profileEmail}>
+              {auth.currentUser?.email || 'No email available'}
+            </Text>
+
+            <TouchableOpacity style={styles.menuItem}>
+              <Text style={styles.menuText}>Profile</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.menuItem}
+              // @ts-ignore
+              onPress={() => {
+                setProfileMenuVisible(false);
+                router.push('/adherence');
+              }}
+            >
+              <Text style={styles.menuText}>Adherence Report</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.menuItem}
+              // @ts-ignore
+              onPress={() => {
+                setProfileMenuVisible(false);
+                router.push('/add-medication');
+              }}
+            >
+              <Text style={styles.menuText}>Manage Medications</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.menuItem}
+              // @ts-ignore
+              onPress={() => {
+                setProfileMenuVisible(false);
+                router.push('/set-reminders');
+              }}
+            >
+              <Text style={styles.menuText}>Set Reminders</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.logoutItem} onPress={handleLogout}>
+              <Text style={styles.logoutText}>Logout</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       <View style={styles.bottomNav}>
         <TouchableOpacity style={styles.navItem}>
@@ -113,7 +187,7 @@ export default function DashboardScreen() {
         <TouchableOpacity
           style={styles.navItem}
           // @ts-ignore
-            onPress={() => router.push('/add-medication')}
+          onPress={() => router.push('/add-medication')}
         >
           <Text style={styles.navIcon}>💊</Text>
         </TouchableOpacity>
@@ -124,7 +198,10 @@ export default function DashboardScreen() {
         >
           <Text style={styles.navIcon}>📈</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => setProfileMenuVisible(true)}
+        >
           <Text style={styles.navIcon}>👤</Text>
         </TouchableOpacity>
       </View>
@@ -179,4 +256,47 @@ const styles = StyleSheet.create({
   },
   navItem: { padding: 8 },
   navIcon: { fontSize: 22 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'flex-end',
+  },
+  profileMenu: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    gap: 12,
+  },
+  profileName: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1a1a1a',
+  },
+  profileEmail: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 10,
+  },
+  menuItem: {
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  menuText: {
+    fontSize: 16,
+    color: '#1a1a1a',
+  },
+  logoutItem: {
+    marginTop: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+  },
+  logoutText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
 });

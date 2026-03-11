@@ -1,6 +1,26 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
+// ─── SOUND OPTIONS ──────────────────────────────────────────
+
+export type SoundOption = 'pill-reminder' | 'gentle-chime' | 'alert-beep' | 'default';
+
+export const SOUND_OPTIONS: { id: SoundOption; label: string; emoji: string }[] = [
+  { id: 'default',       label: 'Default',        emoji: '🔔' },
+  { id: 'pill-reminder', label: 'Pill Reminder',   emoji: '💊' },
+  { id: 'gentle-chime',  label: 'Gentle Chime',    emoji: '🎵' },
+  { id: 'alert-beep',    label: 'Alert Beep',      emoji: '📢' },
+];
+
+// Maps sound IDs to the filename used by expo-notifications
+// On iOS/Android the file must be in the app bundle; on web sound: true uses browser default
+const SOUND_FILE: Record<SoundOption, string | boolean> = {
+  'default':       true,
+  'pill-reminder': 'pill-reminder.wav',
+  'gentle-chime':  'gentle-chime.wav',
+  'alert-beep':    'alert-beep.wav',
+};
+
 // Configure how notifications appear when the app is in the foreground
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -48,9 +68,14 @@ export const scheduleMedNotification = async (
   medName: string,
   dosage: string,
   times: string[],
-  sound: boolean
+  sound: boolean,
+  soundOption: SoundOption = 'default'
 ): Promise<string[]> => {
   const ids: string[] = [];
+
+  // On web, expo-notifications doesn't support custom sound files
+  const resolvedSound: string | boolean =
+    Platform.OS === 'web' ? sound : (sound ? SOUND_FILE[soundOption] : false);
 
   for (const timeStr of times) {
     const { hour, minute } = parseTime(timeStr);
@@ -59,8 +84,8 @@ export const scheduleMedNotification = async (
       content: {
         title: '💊 Time to take your medication',
         body: `${medName} ${dosage}`,
-        sound: sound,
-        data: { medName, dosage },
+        sound: resolvedSound,
+        data: { medName, dosage, soundOption },
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DAILY,

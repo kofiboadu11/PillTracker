@@ -16,6 +16,8 @@ import { addMedication } from '../firebase/medications';
 import {
   requestNotificationPermissions,
   scheduleMedNotification,
+  SOUND_OPTIONS,
+  type SoundOption,
 } from '../utils/notifications';
 
 // ─── Time Picker Modal ────────────────────────────────────────────────────────
@@ -146,6 +148,7 @@ export default function SetRemindersScreen() {
   const [pickerIndex, setPickerIndex] = useState<number | null>(null);
   const [pushNotifications, setPushNotifications] = useState(true);
   const [soundAlert, setSoundAlert] = useState(true);
+  const [selectedSound, setSelectedSound] = useState<SoundOption>('default');
   const [snooze, setSnooze] = useState(true);
   const [loading, setLoading] = useState(false);
 
@@ -175,7 +178,8 @@ export default function SetRemindersScreen() {
             String(name),
             String(dosage),
             times,
-            soundAlert
+            soundAlert,
+            selectedSound
           );
         } else {
           Alert.alert(
@@ -260,6 +264,35 @@ export default function SetRemindersScreen() {
             trackColor={{ true: '#1a1a1a' }}
           />
         </View>
+
+        {/* ── Sound Picker (only shown when sound is on) ── */}
+        {soundAlert && (
+          <View style={styles.soundPickerContainer}>
+            <Text style={styles.soundPickerLabel}>Notification Sound</Text>
+            <View style={styles.soundPickerRow}>
+              {SOUND_OPTIONS.map((opt) => (
+                <TouchableOpacity
+                  key={opt.id}
+                  style={[
+                    styles.soundOption,
+                    selectedSound === opt.id && styles.soundOptionActive,
+                  ]}
+                  onPress={() => setSelectedSound(opt.id)}
+                >
+                  <Text style={styles.soundOptionEmoji}>{opt.emoji}</Text>
+                  <Text
+                    style={[
+                      styles.soundOptionText,
+                      selectedSound === opt.id && styles.soundOptionTextActive,
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
 
         <View style={styles.toggleRow}>
           <Text style={styles.toggleLabel}>Snooze (5 min)</Text>
@@ -401,4 +434,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   confirmBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+
+  // ── Sound Picker styles ──
+  soundPickerContainer: {
+    backgroundColor: '#f9f9f9',
+    borderRadius: 12,
+    padding: 14,
+    gap: 10,
+  },
+  soundPickerLabel: { fontSize: 13, fontWeight: '600', color: '#555' },
+  soundPickerRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  soundOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1.5,
+    borderColor: '#ddd',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#fff',
+  },
+  soundOptionActive: {
+    borderColor: '#1a1a1a',
+    backgroundColor: '#1a1a1a',
+  },
+  soundOptionEmoji: { fontSize: 14 },
+  soundOptionText: { fontSize: 13, fontWeight: '600', color: '#444' },
+  soundOptionTextActive: { color: '#fff' },
 });

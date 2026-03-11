@@ -7,7 +7,7 @@ import {
 import { router, useFocusEffect } from 'expo-router';
 import { auth } from '../firebase/config';
 import { signOut } from "firebase/auth";
-import { getMedications, toggleMedication, getAdherenceForDate } from '../firebase/medications';
+import { getMedications, toggleMedication, getAdherenceForDate, deleteMedication } from '../firebase/medications';
 
 export default function DashboardScreen() {
   const [medications, setMedications] = useState<any[]>([]);
@@ -52,6 +52,28 @@ export default function DashboardScreen() {
     } catch (error) {
       Alert.alert('Error', 'Could not update medication status.');
     }
+  };
+
+  const handleDelete = (medId: string, medName: string) => {
+    Alert.alert(
+      'Delete Medication',
+      `Are you sure you want to delete ${medName}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteMedication(medId);
+              setMedications(prev => prev.filter(m => m.id !== medId));
+            } catch (error) {
+              Alert.alert('Error', 'Could not delete medication.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleLogout = async () => {
@@ -124,6 +146,12 @@ export default function DashboardScreen() {
                 })}
               >
                 <Text style={styles.editIcon}>✏️</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteButton}
+                onPress={() => handleDelete(med.id, med.name)}
+              >
+                <Text style={styles.deleteIcon}>🗑️</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.checkButton, takenMeds[med.id] && styles.checkButtonDone]}
@@ -273,6 +301,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
   editIcon: { fontSize: 16 },
+  deleteButton: {
+    width: 32, height: 32, borderRadius: 8,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  deleteIcon: { fontSize: 16 },
   bottomNav: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     backgroundColor: '#fff', flexDirection: 'row', justifyContent: 'space-around',

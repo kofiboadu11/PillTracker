@@ -23,7 +23,7 @@ import {
 // ─── Time Picker Modal ────────────────────────────────────────────────────────
 
 const HOURS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
-const MINUTES = ['00', '15', '30', '45'];
+const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
 const PERIODS = ['AM', 'PM'];
 
 interface TimePickerModalProps {
@@ -41,7 +41,7 @@ function TimePickerModal({ visible, currentTime, label, onConfirm, onClose }: Ti
     const [h, m] = timePart.split(':');
     return {
       hour: String(Number(h)).padStart(2, '0'),
-      minute: String(Number(m) - (Number(m) % 15)).padStart(2, '0'),
+      minute: String(Number(m)).padStart(2, '0'),
       period: period ?? 'AM',
     };
   };
@@ -201,7 +201,7 @@ export default function SetRemindersScreen() {
       // @ts-ignore
       router.push({
         pathname: '/confirmation',
-        params: { name, dosage }
+        params: { name, dosage, times: times.join(', ') }
       });
     } catch (error) {
       Alert.alert('Error', 'Could not save medication. Please try again.');

@@ -30,10 +30,11 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      // Navigate to Dashboard on successful login
-      // @ts-ignore
-      router.push('/dashboard');
+      console.log('Login successful, navigating to dashboard...');
+      router.replace('/dashboard' as any);
     } catch (error: any) {
+      console.log('Login error code:', error.code);
+      console.log('Login error message:', error.message);
       // Show a friendly error message based on Firebase error codes
       if (error.code === 'auth/user-not-found') {
         Alert.alert('Not found', 'No account exists with this email.');

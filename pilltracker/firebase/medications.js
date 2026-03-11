@@ -31,6 +31,13 @@ export const getMedications = async () => {
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
 
+// Update an existing medication
+export const updateMedication = async (medId, updatedData) => {
+  const uid = getUID();
+  const ref = doc(db, 'users', uid, 'medications', medId);
+  await updateDoc(ref, updatedData);
+};
+
 // Delete a medication
 export const deleteMedication = async (medId) => {
   const uid = getUID();

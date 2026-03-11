@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useCallback } from 'react';
 
 import {
   View, Text, TouchableOpacity, StyleSheet,
   SafeAreaView, ScrollView, Alert, Modal
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { auth } from '../firebase/config';
 import { signOut } from "firebase/auth";
 import { getMedications, toggleMedication, getAdherenceForDate } from '../firebase/medications';
@@ -24,23 +24,25 @@ export default function DashboardScreen() {
     return 'Good evening';
   };
 
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        const meds = await getMedications();
-        setMedications(meds);
+  useFocusEffect(
+    useCallback(() => {
+      const loadData = async () => {
+        try {
+          const meds = await getMedications();
+          setMedications(meds);
 
-        const today = new Date().toISOString().split('T')[0];
-        const adherence = await getAdherenceForDate(today);
-        setTakenMeds(adherence);
-      } catch (error) {
-        Alert.alert('Error', 'Could not load medications.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadData();
-  }, []);
+          const today = new Date().toISOString().split('T')[0];
+          const adherence = await getAdherenceForDate(today);
+          setTakenMeds(adherence);
+        } catch (error) {
+          Alert.alert('Error', 'Could not load medications.');
+        } finally {
+          setLoading(false);
+        }
+      };
+      loadData();
+    }, [])
+  );
 
   const handleMarkTaken = async (medId: string) => {
     try {
@@ -106,6 +108,23 @@ export default function DashboardScreen() {
                 <Text style={styles.medName}>{med.name}</Text>
                 <Text style={styles.medDetails}>{med.dosage} · {med.times?.[0]}</Text>
               </View>
+              <TouchableOpacity
+                style={styles.editButton}
+                // @ts-ignore
+                onPress={() => router.push({
+                  pathname: '/edit-medication',
+                  params: {
+                    id: med.id,
+                    name: med.name,
+                    dosage: med.dosage,
+                    form: med.form,
+                    frequency: med.frequency,
+                    notes: med.notes ?? '',
+                  },
+                })}
+              >
+                <Text style={styles.editIcon}>✏️</Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.checkButton, takenMeds[med.id] && styles.checkButtonDone]}
                 onPress={() => handleMarkTaken(med.id)}
@@ -249,6 +268,11 @@ const styles = StyleSheet.create({
   },
   checkButtonDone: { backgroundColor: '#1a1a1a', borderColor: '#1a1a1a' },
   checkMark: { color: '#fff', fontWeight: 'bold' },
+  editButton: {
+    width: 32, height: 32, borderRadius: 8,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  editIcon: { fontSize: 16 },
   bottomNav: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     backgroundColor: '#fff', flexDirection: 'row', justifyContent: 'space-around',

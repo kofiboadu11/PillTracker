@@ -36,8 +36,7 @@ export default function SignUpScreen() {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       await updateProfile(userCredential.user, { displayName: fullName });
-      // @ts-ignore
-      router.push('/dashboard');
+      router.replace('/dashboard' as any);
     } catch (error: any) {
       Alert.alert('Sign up failed', error.message);
     } finally {

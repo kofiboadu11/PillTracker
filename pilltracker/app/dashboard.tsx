@@ -92,8 +92,8 @@ export default function DashboardScreen() {
     }
   };
 
-  const takenCount = Object.values(takenMeds).filter(Boolean).length;
   const totalCount = medications.length;
+  const takenCount = medications.filter(m => takenMeds[m.id]).length;
   const progressPercent = totalCount > 0 ? (takenCount / totalCount) * 100 : 0;
 
   return (

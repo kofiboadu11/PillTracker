@@ -67,6 +67,12 @@ export default function DashboardScreen() {
             try {
               await deleteMedication(medId);
               setMedications(prev => prev.filter(m => m.id !== medId));
+              // Also remove from takenMeds so progress bar updates correctly
+              setTakenMeds(prev => {
+                const updated = { ...prev };
+                delete updated[medId];
+                return updated;
+              });
             } catch (error) {
               Alert.alert('Error', 'Could not delete medication.');
             }

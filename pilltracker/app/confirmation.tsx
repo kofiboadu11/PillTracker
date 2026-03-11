@@ -3,7 +3,11 @@ import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-na
 import { router, useLocalSearchParams } from 'expo-router';
 
 export default function ConfirmationScreen() {
-  const { name, dosage } = useLocalSearchParams();
+  const { name, dosage, times } = useLocalSearchParams();
+
+  const timesDisplay = times
+    ? String(times)
+    : null;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -15,8 +19,11 @@ export default function ConfirmationScreen() {
       <Text style={styles.title}>All Set!</Text>
 
       <Text style={styles.description}>
-        {name} {dosage} has been added to your medication list with daily
-        reminders at 8:00 AM and 8:00 PM.
+        <Text style={{ fontWeight: '600' }}>{name} {dosage}</Text> has been added
+        to your medication list
+        {timesDisplay
+          ? ` with daily reminders at ${timesDisplay}.`
+          : '.'}
       </Text>
 
       <TouchableOpacity

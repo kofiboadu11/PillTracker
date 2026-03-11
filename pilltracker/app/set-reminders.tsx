@@ -11,6 +11,10 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { addMedication } from '../firebase/medications';
+import {
+  requestNotificationPermissions,
+  scheduleMedNotification,
+} from '../utils/notifications';
 
 export default function SetRemindersScreen() {
   const { name, dosage, form, frequency, notes } = useLocalSearchParams();
@@ -25,12 +29,33 @@ export default function SetRemindersScreen() {
   const handleSave = async () => {
     setLoading(true);
     try {
+      let notificationIds: string[] = [];
+
+      if (pushNotifications) {
+        const granted = await requestNotificationPermissions();
+        if (granted) {
+          notificationIds = await scheduleMedNotification(
+            String(name),
+            String(dosage),
+            [morningTime, eveningTime],
+            soundAlert
+          );
+        } else {
+          Alert.alert(
+            'Permission Denied',
+            'Enable notifications in your device settings to receive medication reminders.'
+          );
+        }
+      }
+
       await addMedication({
         name, dosage, form, frequency, notes,
         times: [morningTime, eveningTime],
         reminders: { pushNotifications, soundAlert, snooze },
+        notificationIds,
         createdAt: new Date().toISOString()
       });
+
       // @ts-ignore
       router.push({
         pathname: '/confirmation',

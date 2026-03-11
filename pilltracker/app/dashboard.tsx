@@ -8,6 +8,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { auth } from '../firebase/config';
 import { signOut } from "firebase/auth";
 import { getMedications, toggleMedication, getAdherenceForDate, deleteMedication } from '../firebase/medications';
+import { cancelMedNotifications } from '../utils/notifications';
 
 export default function DashboardScreen() {
   const [medications, setMedications] = useState<any[]>([]);
@@ -54,7 +55,7 @@ export default function DashboardScreen() {
     }
   };
 
-  const handleDelete = (medId: string, medName: string) => {
+  const handleDelete = (medId: string, medName: string, notificationIds: string[] = []) => {
     Alert.alert(
       'Delete Medication',
       `Are you sure you want to delete ${medName}?`,
@@ -65,6 +66,10 @@ export default function DashboardScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+              // Cancel scheduled notifications first
+              if (notificationIds.length > 0) {
+                await cancelMedNotifications(notificationIds);
+              }
               await deleteMedication(medId);
               setMedications(prev => prev.filter(m => m.id !== medId));
             } catch (error) {
@@ -149,7 +154,7 @@ export default function DashboardScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.deleteButton}
-                onPress={() => handleDelete(med.id, med.name)}
+                onPress={() => handleDelete(med.id, med.name, med.notificationIds ?? [])}
               >
                 <Text style={styles.deleteIcon}>🗑️</Text>
               </TouchableOpacity>

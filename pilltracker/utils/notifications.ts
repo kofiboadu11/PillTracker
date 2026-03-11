@@ -81,15 +81,20 @@ export const scheduleMedNotification = async (
   for (const timeStr of times) {
     const { hour, minute } = parseTime(timeStr);
 
+    const content: Notifications.NotificationContentInput = {
+      title: '💊 Time to take your medication',
+      body: `${medName} ${dosage}`,
+      sound: resolvedSound,
+      data: { medName, dosage, soundOption },
+    };
+
+    // Only attach category (snooze button) if snooze is enabled
+    if (snoozeEnabled) {
+      content.categoryIdentifier = 'medication';
+    }
+
     const id = await Notifications.scheduleNotificationAsync({
-      content: {
-        title: '💊 Time to take your medication',
-        body: `${medName} ${dosage}`,
-        sound: resolvedSound,
-        // Attach snooze action button only if snooze is enabled
-        categoryIdentifier: snoozeEnabled ? 'medication' : undefined,
-        data: { medName, dosage, soundOption },
-      },
+      content,
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DAILY,
         hour,

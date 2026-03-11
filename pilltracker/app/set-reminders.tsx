@@ -179,7 +179,8 @@ export default function SetRemindersScreen() {
             String(dosage),
             times,
             soundAlert,
-            selectedSound
+            selectedSound,
+            snooze
           );
         } else {
           Alert.alert(
@@ -192,7 +193,7 @@ export default function SetRemindersScreen() {
       await addMedication({
         name, dosage, form, frequency, notes,
         times,
-        reminders: { pushNotifications, soundAlert, snooze },
+        reminders: { pushNotifications, soundAlert, selectedSound, snooze },
         notificationIds,
         createdAt: new Date().toISOString()
       });

@@ -69,7 +69,8 @@ export const scheduleMedNotification = async (
   dosage: string,
   times: string[],
   sound: boolean,
-  soundOption: SoundOption = 'default'
+  soundOption: SoundOption = 'default',
+  snoozeEnabled: boolean = false
 ): Promise<string[]> => {
   const ids: string[] = [];
 
@@ -85,6 +86,8 @@ export const scheduleMedNotification = async (
         title: '💊 Time to take your medication',
         body: `${medName} ${dosage}`,
         sound: resolvedSound,
+        // Attach snooze action button only if snooze is enabled
+        categoryIdentifier: snoozeEnabled ? 'medication' : undefined,
         data: { medName, dosage, soundOption },
       },
       trigger: {
@@ -114,4 +117,34 @@ export const cancelMedNotifications = async (notificationIds: string[]): Promise
  */
 export const cancelAllNotifications = async (): Promise<void> => {
   await Notifications.cancelAllScheduledNotificationsAsync();
+};
+
+/**
+ * Snooze a medication notification by 5 minutes.
+ * Schedules a one-time notification 5 minutes from now.
+ * Returns the new notification ID.
+ */
+export const snoozeMedNotification = async (
+  medName: string,
+  dosage: string,
+  soundOption: SoundOption = 'default',
+  snoozeMinutes: number = 5
+): Promise<string> => {
+  const resolvedSound: string | boolean =
+    Platform.OS === 'web' ? true : SOUND_FILE[soundOption];
+
+  const id = await Notifications.scheduleNotificationAsync({
+    content: {
+      title: `⏰ Snooze reminder — ${medName}`,
+      body: `Don't forget your ${dosage} dose!`,
+      sound: resolvedSound,
+      data: { medName, dosage, soundOption, snoozed: true },
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: snoozeMinutes * 60,
+    },
+  });
+
+  return id;
 };

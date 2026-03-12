@@ -85,3 +85,40 @@ export const toggleMedication = async (medId, value) => {
   const ref = doc(db, 'users', uid, 'adherence', today);
   await setDoc(ref, { [medId]: value }, { merge: true });
 };
+
+// Get medication history for the past N days, merged with medication names
+export const getMedicationHistory = async (days = 30) => {
+  const uid = getUID();
+
+  // Fetch all medications to get their names
+  const medsSnapshot = await getDocs(collection(db, 'users', uid, 'medications'));
+  const medMap = {};
+  medsSnapshot.docs.forEach(d => {
+    medMap[d.id] = { id: d.id, ...d.data() };
+  });
+
+  const results = [];
+  for (let i = 0; i < days; i++) {
+    const date = new Date();
+    date.setDate(date.getDate() - i);
+    const dateStr = date.toISOString().split('T')[0];
+
+    const adherenceRef = doc(db, 'users', uid, 'adherence', dateStr);
+    const adherenceSnap = await getDoc(adherenceRef);
+    const adherenceData = adherenceSnap.exists() ? adherenceSnap.data() : {};
+
+    // Only include days that have at least one entry
+    const entries = Object.entries(adherenceData).map(([medId, taken]) => ({
+      medId,
+      name: medMap[medId]?.name ?? 'Deleted medication',
+      dosage: medMap[medId]?.dosage ?? '',
+      taken: Boolean(taken),
+    }));
+
+    if (entries.length > 0) {
+      results.push({ date: dateStr, entries });
+    }
+  }
+
+  return results;
+};

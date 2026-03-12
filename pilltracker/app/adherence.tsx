@@ -7,7 +7,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { getMedicationHistory } from '../firebase/medications';
 
 type FilterMode  = 'all' | 'taken' | 'missed';
-type ViewMode    = 'list' | 'calendar';
+type ViewMode    = 'list' | 'calendar' | 'stats';
 
 type HistoryEntry = { medId: string; name: string; dosage: string; taken: boolean };
 type HistoryDay   = { date: string; entries: HistoryEntry[] };
@@ -63,6 +63,60 @@ const dotColor = (taken: number, total: number): string => {
   return '#f59e0b';                        // partial    → amber
 };
 
+// ── Stats helpers ────────────────────────────────────────────
+
+/** Current streak: consecutive days (going back from today) where ALL meds were taken */
+const calcStreak = (history: HistoryDay[]): number => {
+  const map: Record<string, HistoryDay> = {};
+  history.forEach(d => { map[d.date] = d; });
+  let streak = 0;
+  const d = new Date();
+  while (true) {
+    const key = d.toISOString().split('T')[0];
+    const day = map[key];
+    if (!day || day.entries.length === 0) break;
+    const allTaken = day.entries.every(e => e.taken);
+    if (!allTaken) break;
+    streak++;
+    d.setDate(d.getDate() - 1);
+  }
+  return streak;
+};
+
+/** Per-medication stats across the given history */
+const calcMedStats = (history: HistoryDay[]) => {
+  const map: Record<string, { name: string; taken: number; missed: number }> = {};
+  history.forEach(day =>
+    day.entries.forEach(e => {
+      if (!map[e.medId]) map[e.medId] = { name: e.name, taken: 0, missed: 0 };
+      if (e.taken) map[e.medId].taken++;
+      else         map[e.medId].missed++;
+    })
+  );
+  return Object.values(map).sort((a, b) => {
+    const ra = a.taken / (a.taken + a.missed);
+    const rb = b.taken / (b.taken + b.missed);
+    return rb - ra;  // best first
+  });
+};
+
+/** Adherence % grouped by weekday (0=Sun … 6=Sat) */
+const calcWeekdayStats = (history: HistoryDay[]) => {
+  const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const buckets: { taken: number; total: number }[] = Array.from({ length: 7 }, () => ({ taken: 0, total: 0 }));
+  history.forEach(day => {
+    const dow = new Date(day.date + 'T00:00:00').getDay();
+    day.entries.forEach(e => {
+      buckets[dow].total++;
+      if (e.taken) buckets[dow].taken++;
+    });
+  });
+  return DAYS.map((label, i) => ({
+    label,
+    pct: buckets[i].total > 0 ? Math.round((buckets[i].taken / buckets[i].total) * 100) : null,
+  }));
+};
+
 export default function AdherenceScreen() {
   const [history, setHistory]       = useState<HistoryDay[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -70,6 +124,7 @@ export default function AdherenceScreen() {
   const [filter, setFilter]         = useState<FilterMode>('all');
   const [viewMode, setViewMode]     = useState<ViewMode>('list');
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [statPeriod, setStatPeriod] = useState<7 | 30>(30);   // stats period toggle
 
   // Calendar navigation state
   const today = new Date();
@@ -96,6 +151,31 @@ export default function AdherenceScreen() {
   const totalEntries  = history.reduce((sum, d) => sum + d.entries.length, 0);
   const takenEntries  = history.reduce((sum, d) => sum + d.entries.filter(e => e.taken).length, 0);
   const adherenceRate = totalEntries > 0 ? Math.round((takenEntries / totalEntries) * 100) : 0;
+
+  // ── Statistics derived from the selected period ──────────────
+  const periodHistory = useMemo(() => {
+    if (statPeriod === 30) return history;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 7);
+    const cutoffStr = cutoff.toISOString().split('T')[0];
+    return history.filter(d => d.date >= cutoffStr);
+  }, [history, statPeriod]);
+
+  const streak        = useMemo(() => calcStreak(history), [history]);
+  const medStats      = useMemo(() => calcMedStats(periodHistory), [periodHistory]);
+  const weekdayStats  = useMemo(() => calcWeekdayStats(periodHistory), [periodHistory]);
+
+  const periodTotal  = periodHistory.reduce((s, d) => s + d.entries.length, 0);
+  const periodTaken  = periodHistory.reduce((s, d) => s + d.entries.filter(e => e.taken).length, 0);
+  const periodRate   = periodTotal > 0 ? Math.round((periodTaken / periodTotal) * 100) : 0;
+  const periodMissed = periodTotal - periodTaken;
+
+  const bestDay  = weekdayStats.reduce((best, w) =>
+    w.pct !== null && (best.pct === null || w.pct > best.pct!) ? w : best,
+    { label: '—', pct: null as number | null });
+  const worstDay = weekdayStats.reduce((worst, w) =>
+    w.pct !== null && (worst.pct === null || w.pct < worst.pct!) ? w : worst,
+    { label: '—', pct: null as number | null });
 
   // Apply search + filter
   const filteredHistory = useMemo(() => {
@@ -162,6 +242,14 @@ export default function AdherenceScreen() {
             >
               <Text style={[styles.toggleBtnText, viewMode === 'calendar' && styles.toggleBtnTextActive]}>
                 📅 Cal
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.toggleBtn, viewMode === 'stats' && styles.toggleBtnActive]}
+              onPress={() => setViewMode('stats')}
+            >
+              <Text style={[styles.toggleBtnText, viewMode === 'stats' && styles.toggleBtnTextActive]}>
+                📊 Stats
               </Text>
             </TouchableOpacity>
           </View>
@@ -303,6 +391,150 @@ export default function AdherenceScreen() {
               <Text style={styles.calNoData}>No data for this day.</Text>
             )}
           </View>
+        )}
+
+        {/* ════════════════════════════════════
+            STATS VIEW
+        ════════════════════════════════════ */}
+        {!loading && viewMode === 'stats' && (
+          <>
+            {history.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyEmoji}>📊</Text>
+                <Text style={styles.emptyTitle}>No data yet</Text>
+                <Text style={styles.emptyText}>
+                  Mark medications as taken on the dashboard to see your statistics.
+                </Text>
+              </View>
+            ) : (
+              <>
+                {/* Period toggle */}
+                <View style={styles.periodRow}>
+                  {([7, 30] as const).map(p => (
+                    <TouchableOpacity
+                      key={p}
+                      style={[styles.periodPill, statPeriod === p && styles.periodPillActive]}
+                      onPress={() => setStatPeriod(p)}
+                    >
+                      <Text style={[styles.periodPillText, statPeriod === p && styles.periodPillTextActive]}>
+                        Last {p} days
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Overview row */}
+                <View style={styles.statsOverviewRow}>
+                  <View style={[styles.statsOverviewCard, { backgroundColor: '#f0fdf4' }]}>
+                    <Text style={styles.statsOverviewValue}>{periodRate}%</Text>
+                    <Text style={styles.statsOverviewLabel}>Adherence</Text>
+                  </View>
+                  <View style={[styles.statsOverviewCard, { backgroundColor: '#f0fdf4' }]}>
+                    <Text style={[styles.statsOverviewValue, { color: '#22c55e' }]}>{periodTaken}</Text>
+                    <Text style={styles.statsOverviewLabel}>Taken</Text>
+                  </View>
+                  <View style={[styles.statsOverviewCard, { backgroundColor: '#fef2f2' }]}>
+                    <Text style={[styles.statsOverviewValue, { color: '#ef4444' }]}>{periodMissed}</Text>
+                    <Text style={styles.statsOverviewLabel}>Missed</Text>
+                  </View>
+                </View>
+
+                {/* Streak card */}
+                <View style={styles.streakCard}>
+                  <View style={styles.streakLeft}>
+                    <Text style={styles.streakEmoji}>🔥</Text>
+                    <View>
+                      <Text style={styles.streakValue}>{streak} day{streak !== 1 ? 's' : ''}</Text>
+                      <Text style={styles.streakLabel}>Current streak</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.streakSub}>
+                    {streak === 0
+                      ? 'Take all meds today to start!'
+                      : `${streak} consecutive perfect day${streak !== 1 ? 's' : ''}`}
+                  </Text>
+                </View>
+
+                {/* Best / Worst day */}
+                <View style={styles.statsCard}>
+                  <Text style={styles.statsCardTitle}>Best & Worst Day</Text>
+                  <View style={styles.bestWorstRow}>
+                    <View style={styles.bestWorstItem}>
+                      <Text style={styles.bestWorstEmoji}>🌟</Text>
+                      <Text style={styles.bestWorstDay}>{bestDay.label}</Text>
+                      <Text style={[styles.bestWorstPct, { color: '#22c55e' }]}>
+                        {bestDay.pct !== null ? `${bestDay.pct}%` : '—'}
+                      </Text>
+                    </View>
+                    <View style={styles.bestWorstDivider} />
+                    <View style={styles.bestWorstItem}>
+                      <Text style={styles.bestWorstEmoji}>😬</Text>
+                      <Text style={styles.bestWorstDay}>{worstDay.label}</Text>
+                      <Text style={[styles.bestWorstPct, { color: '#ef4444' }]}>
+                        {worstDay.pct !== null ? `${worstDay.pct}%` : '—'}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Weekday bar chart */}
+                <View style={styles.statsCard}>
+                  <Text style={styles.statsCardTitle}>Adherence by Day of Week</Text>
+                  <View style={styles.weekdayChart}>
+                    {weekdayStats.map(({ label, pct }) => (
+                      <View key={label} style={styles.weekdayCol}>
+                        <Text style={styles.weekdayPct}>
+                          {pct !== null ? `${pct}` : ''}
+                        </Text>
+                        <View style={styles.weekdayBarBg}>
+                          <View style={[
+                            styles.weekdayBarFill,
+                            {
+                              height: pct !== null ? `${pct}%` : '0%',
+                              backgroundColor: pct === null ? '#e5e7eb'
+                                : pct >= 80 ? '#22c55e'
+                                : pct >= 50 ? '#f59e0b'
+                                : '#ef4444',
+                            }
+                          ]} />
+                        </View>
+                        <Text style={styles.weekdayLabel}>{label}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+
+                {/* Per-medication breakdown */}
+                <View style={styles.statsCard}>
+                  <Text style={styles.statsCardTitle}>Per Medication</Text>
+                  {medStats.map((med, i) => {
+                    const total = med.taken + med.missed;
+                    const pct   = total > 0 ? Math.round((med.taken / total) * 100) : 0;
+                    return (
+                      <View key={i} style={styles.medStatRow}>
+                        <View style={styles.medStatInfo}>
+                          <Text style={styles.medStatName}>{med.name}</Text>
+                          <Text style={styles.medStatSub}>{med.taken} taken · {med.missed} missed</Text>
+                        </View>
+                        <View style={styles.medStatBarWrap}>
+                          <View style={styles.medStatBarBg}>
+                            <View style={[
+                              styles.medStatBarFill,
+                              {
+                                width: `${pct}%`,
+                                backgroundColor: pct >= 80 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#ef4444',
+                              }
+                            ]} />
+                          </View>
+                          <Text style={styles.medStatPct}>{pct}%</Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              </>
+            )}
+          </>
         )}
 
         {/* ════════════════════════════════════
@@ -497,4 +729,65 @@ const styles = StyleSheet.create({
   calLegendDot: { width: 8, height: 8, borderRadius: 4 },
   calLegendText: { fontSize: 11, color: '#888' },
   calNoData: { fontSize: 13, color: '#999', textAlign: 'center', paddingVertical: 8 },
+
+  // ── Stats view ──────────────────────────────────────────────
+  periodRow: { flexDirection: 'row', gap: 8 },
+  periodPill: {
+    paddingHorizontal: 16, paddingVertical: 7, borderRadius: 20,
+    backgroundColor: '#f0f0f0',
+  },
+  periodPillActive: { backgroundColor: '#1a1a1a' },
+  periodPillText: { fontSize: 13, fontWeight: '600', color: '#666' },
+  periodPillTextActive: { color: '#fff' },
+
+  statsOverviewRow: { flexDirection: 'row', gap: 10 },
+  statsOverviewCard: {
+    flex: 1, borderRadius: 14, padding: 14, alignItems: 'center', gap: 4,
+  },
+  statsOverviewValue: { fontSize: 26, fontWeight: '700', color: '#1a1a1a' },
+  statsOverviewLabel: { fontSize: 12, color: '#666', fontWeight: '500' },
+
+  streakCard: {
+    backgroundColor: '#fff8ed', borderRadius: 14, padding: 16,
+    borderLeftWidth: 4, borderLeftColor: '#f97316', gap: 6,
+  },
+  streakLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  streakEmoji: { fontSize: 32 },
+  streakValue: { fontSize: 22, fontWeight: '700', color: '#1a1a1a' },
+  streakLabel: { fontSize: 12, color: '#888', fontWeight: '500' },
+  streakSub: { fontSize: 13, color: '#666', marginLeft: 44 },
+
+  statsCard: {
+    backgroundColor: '#fff', borderRadius: 14, padding: 16, gap: 14,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
+  },
+  statsCardTitle: { fontSize: 14, fontWeight: '700', color: '#1a1a1a' },
+
+  bestWorstRow: { flexDirection: 'row', alignItems: 'center' },
+  bestWorstItem: { flex: 1, alignItems: 'center', gap: 4 },
+  bestWorstDivider: { width: 1, height: 50, backgroundColor: '#eee' },
+  bestWorstEmoji: { fontSize: 24 },
+  bestWorstDay: { fontSize: 16, fontWeight: '700', color: '#1a1a1a' },
+  bestWorstPct: { fontSize: 13, fontWeight: '600' },
+
+  weekdayChart: { flexDirection: 'row', alignItems: 'flex-end', gap: 4, height: 100 },
+  weekdayCol: { flex: 1, alignItems: 'center', gap: 4 },
+  weekdayPct: { fontSize: 9, color: '#999', fontWeight: '600' },
+  weekdayBarBg: {
+    flex: 1, width: '100%', backgroundColor: '#f0f0f0',
+    borderRadius: 4, overflow: 'hidden', justifyContent: 'flex-end',
+  },
+  weekdayBarFill: { width: '100%', borderRadius: 4 },
+  weekdayLabel: { fontSize: 10, color: '#888', fontWeight: '600' },
+
+  medStatRow: { gap: 6 },
+  medStatInfo: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  medStatName: { fontSize: 14, fontWeight: '600', color: '#1a1a1a' },
+  medStatSub: { fontSize: 12, color: '#999' },
+  medStatBarWrap: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  medStatBarBg: {
+    flex: 1, height: 8, backgroundColor: '#f0f0f0', borderRadius: 4, overflow: 'hidden',
+  },
+  medStatBarFill: { height: '100%', borderRadius: 4 },
+  medStatPct: { fontSize: 12, fontWeight: '700', color: '#555', width: 36, textAlign: 'right' },
 });

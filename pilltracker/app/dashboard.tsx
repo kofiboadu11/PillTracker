@@ -1,20 +1,137 @@
-import React, { useState, useCallback } from 'react';
-
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  SafeAreaView, ScrollView, Alert, Modal
+  SafeAreaView, ScrollView, Alert, Modal,
+  Animated, PanResponder, Dimensions,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import { auth } from '../firebase/config';
-import { signOut } from "firebase/auth";
+import { signOut } from 'firebase/auth';
 import { getMedications, toggleMedication, getAdherenceForDate, deleteMedication, initializeTodayAdherence } from '../firebase/medications';
 import { cancelMedNotifications } from '../utils/notifications';
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.35;
+
+// ─── Skeleton Pulse ───────────────────────────────────────────────────────────
+function SkeletonPulse({ style }: { style: any }) {
+  const opacity = useRef(new Animated.Value(0.4)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.4, duration: 700, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [opacity]);
+  return <Animated.View style={[style, { opacity }]} />;
+}
+
+// ─── Skeleton Card ────────────────────────────────────────────────────────────
+function SkeletonCard() {
+  return (
+    <View style={skeletonStyles.card}>
+      <SkeletonPulse style={skeletonStyles.icon} />
+      <View style={{ flex: 1, gap: 8 }}>
+        <SkeletonPulse style={skeletonStyles.lineWide} />
+        <SkeletonPulse style={skeletonStyles.lineNarrow} />
+      </View>
+      <SkeletonPulse style={skeletonStyles.circle} />
+    </View>
+  );
+}
+
+// ─── Swipeable Med Card ───────────────────────────────────────────────────────
+function SwipeableMedCard({
+  med, taken, onToggle, onEdit, onDelete,
+}: {
+  med: any;
+  taken: boolean | undefined;
+  onToggle: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const slideIn    = useRef(new Animated.Value(30)).current;
+  const fadeIn     = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeIn,   { toValue: 1, duration: 350, useNativeDriver: true }),
+      Animated.timing(slideIn,  { toValue: 0, duration: 350, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 8 && Math.abs(g.dy) < 20,
+      onPanResponderMove: (_, g) => {
+        if (g.dx < 0) translateX.setValue(g.dx);
+      },
+      onPanResponderRelease: (_, g) => {
+        if (g.dx < -SWIPE_THRESHOLD) {
+          Animated.timing(translateX, {
+            toValue: -SCREEN_WIDTH,
+            duration: 250,
+            useNativeDriver: true,
+          }).start(() => onDelete());
+        } else {
+          Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
+        }
+      },
+    })
+  ).current;
+
+  return (
+    <View style={{ overflow: 'hidden', borderRadius: 16, marginBottom: 0 }}>
+      {/* Delete hint revealed underneath */}
+      <View style={styles.deleteHint}>
+        <Text style={styles.deleteHintText}>🗑️  Delete</Text>
+      </View>
+      <Animated.View
+        style={{ transform: [{ translateX }], opacity: fadeIn, translateY: slideIn }}
+        {...panResponder.panHandlers}
+      >
+        <View style={[
+          styles.medCard,
+          taken === true  && styles.medCardTaken,
+          taken === false && styles.medCardMissed,
+        ]}>
+          <View style={styles.medIcon}><Text>💊</Text></View>
+          <View style={styles.medInfo}>
+            <Text style={styles.medName}>{med.name}</Text>
+            <Text style={styles.medDetails}>{med.dosage} · {med.times?.[0]}</Text>
+          </View>
+          <TouchableOpacity style={styles.editButton} onPress={onEdit}>
+            <Text style={styles.editIcon}>✏️</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.checkButton, taken && styles.checkButtonDone]}
+            onPress={onToggle}
+          >
+            {taken && <Text style={styles.checkMark}>✓</Text>}
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
+    </View>
+  );
+}
 
 export default function DashboardScreen() {
   const [medications, setMedications] = useState<any[]>([]);
   const [takenMeds, setTakenMeds] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [profileMenuVisible, setProfileMenuVisible] = useState(false);
+
+  // Screen entrance animation
+  const screenFade  = useRef(new Animated.Value(0)).current;
+  const screenSlide = useRef(new Animated.Value(24)).current;
+
+  // Animated progress bar
+  const progressAnim = useRef(new Animated.Value(0)).current;
 
   const userName = auth.currentUser?.displayName?.split(' ')[0] || 'there';
 
@@ -27,16 +144,21 @@ export default function DashboardScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      // Entrance animation on every focus
+      screenFade.setValue(0);
+      screenSlide.setValue(24);
+      Animated.parallel([
+        Animated.timing(screenFade,  { toValue: 1, duration: 400, useNativeDriver: true }),
+        Animated.timing(screenSlide, { toValue: 0, duration: 400, useNativeDriver: true }),
+      ]).start();
+
       const loadData = async () => {
         try {
           const meds = await getMedications();
           setMedications(meds);
 
           const today = new Date().toISOString().split('T')[0];
-
-          // Initialize today's adherence — write false for any med not yet tracked
           await initializeTodayAdherence(meds.map((m: any) => m.id));
-
           const adherence = await getAdherenceForDate(today);
           setTakenMeds(adherence);
         } catch (error) {
@@ -54,6 +176,12 @@ export default function DashboardScreen() {
       const newValue = !takenMeds[medId];
       await toggleMedication(medId, newValue);
       setTakenMeds(prev => ({ ...prev, [medId]: newValue }));
+      // Haptic feedback
+      if (newValue) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
     } catch (error) {
       Alert.alert('Error', 'Could not update medication status.');
     }
@@ -70,7 +198,7 @@ export default function DashboardScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              // Cancel scheduled notifications first
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
               if (notificationIds.length > 0) {
                 await cancelMedNotifications(notificationIds);
               }
@@ -100,8 +228,18 @@ export default function DashboardScreen() {
   const totalCount = medications.length;
   const progressPercent = totalCount > 0 ? (takenCount / totalCount) * 100 : 0;
 
+  // Animate progress bar whenever percent changes
+  useEffect(() => {
+    Animated.timing(progressAnim, {
+      toValue: progressPercent,
+      duration: 600,
+      useNativeDriver: false,
+    }).start();
+  }, [progressPercent]);
+
   return (
     <SafeAreaView style={styles.container}>
+      <Animated.View style={{ flex: 1, opacity: screenFade, transform: [{ translateY: screenSlide }] }}>
       <ScrollView contentContainerStyle={styles.scroll}>
 
         <View style={styles.header}>
@@ -115,7 +253,10 @@ export default function DashboardScreen() {
         <View style={styles.progressCard}>
           <Text style={styles.progressLabel}>Today's Progress</Text>
           <View style={styles.progressBarBg}>
-            <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
+            <Animated.View style={[
+              styles.progressBarFill,
+              { width: progressAnim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }) },
+            ]} />
           </View>
           <View style={styles.progressStats}>
             <Text style={styles.progressStatTaken}>✓ {takenCount} taken</Text>
@@ -129,7 +270,11 @@ export default function DashboardScreen() {
         <Text style={styles.sectionTitle}>TODAY'S MEDICATIONS</Text>
 
         {loading ? (
-          <Text style={styles.loadingText}>Loading medications...</Text>
+          <>
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </>
         ) : medications.length === 0 ? (
           <TouchableOpacity
             style={styles.emptyCard}
@@ -140,49 +285,29 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         ) : (
           medications.map(med => (
-            <View key={med.id} style={[
-              styles.medCard,
-              takenMeds[med.id] === true  && styles.medCardTaken,
-              takenMeds[med.id] === false && styles.medCardMissed,
-            ]}>
-              <View style={styles.medIcon}><Text>💊</Text></View>
-              <View style={styles.medInfo}>
-                <Text style={styles.medName}>{med.name}</Text>
-                <Text style={styles.medDetails}>{med.dosage} · {med.times?.[0]}</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.editButton}
+            <SwipeableMedCard
+              key={med.id}
+              med={med}
+              taken={takenMeds[med.id]}
+              onToggle={() => handleMarkTaken(med.id)}
+              onEdit={() => router.push({
                 // @ts-ignore
-                onPress={() => router.push({
-                  pathname: '/edit-medication',
-                  params: {
-                    id: med.id,
-                    name: med.name,
-                    dosage: med.dosage,
-                    form: med.form,
-                    frequency: med.frequency,
-                    notes: med.notes ?? '',
-                  },
-                })}
-              >
-                <Text style={styles.editIcon}>✏️</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.deleteButton}
-                onPress={() => handleDelete(med.id, med.name, med.notificationIds ?? [])}
-              >
-                <Text style={styles.deleteIcon}>🗑️</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.checkButton, takenMeds[med.id] && styles.checkButtonDone]}
-                onPress={() => handleMarkTaken(med.id)}
-              >
-                {takenMeds[med.id] && <Text style={styles.checkMark}>✓</Text>}
-              </TouchableOpacity>
-            </View>
+                pathname: '/edit-medication',
+                params: {
+                  id: med.id,
+                  name: med.name,
+                  dosage: med.dosage,
+                  form: med.form,
+                  frequency: med.frequency,
+                  notes: med.notes ?? '',
+                },
+              })}
+              onDelete={() => handleDelete(med.id, med.name, med.notificationIds ?? [])}
+            />
           ))
         )}
       </ScrollView>
+      </Animated.View>
 
       <Modal
         visible={profileMenuVisible}
@@ -331,6 +456,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
   deleteIcon: { fontSize: 16 },
+  deleteHint: {
+    position: 'absolute', top: 0, bottom: 0, right: 0, left: 0,
+    backgroundColor: '#ef4444', borderRadius: 16,
+    justifyContent: 'center', alignItems: 'flex-end', paddingRight: 24,
+  },
+  deleteHintText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   bottomNav: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     backgroundColor: '#fff', flexDirection: 'row', justifyContent: 'space-around',
@@ -381,4 +512,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+});
+
+const skeletonStyles = StyleSheet.create({
+  card: {
+    backgroundColor: '#fff', borderRadius: 16, padding: 16,
+    flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 0,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
+  },
+  icon:        { width: 44, height: 44, borderRadius: 12, backgroundColor: '#e5e7eb' },
+  lineWide:    { height: 14, borderRadius: 6, backgroundColor: '#e5e7eb', width: '70%' },
+  lineNarrow:  { height: 11, borderRadius: 6, backgroundColor: '#e5e7eb', width: '45%' },
+  circle:      { width: 32, height: 32, borderRadius: 16, backgroundColor: '#e5e7eb' },
 });

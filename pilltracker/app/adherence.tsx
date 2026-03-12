@@ -1,10 +1,12 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView,
-  ScrollView, ActivityIndicator, TouchableOpacity,
+  ScrollView, ActivityIndicator, TouchableOpacity, TextInput,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { getMedicationHistory } from '../firebase/medications';
+
+type FilterMode = 'all' | 'taken' | 'missed';
 
 type HistoryEntry = { medId: string; name: string; dosage: string; taken: boolean };
 type HistoryDay   = { date: string; entries: HistoryEntry[] };
@@ -28,6 +30,8 @@ const formatDate = (dateStr: string) => {
 export default function AdherenceScreen() {
   const [history, setHistory] = useState<HistoryDay[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch]   = useState('');
+  const [filter, setFilter]   = useState<FilterMode>('all');
 
   useFocusEffect(
     useCallback(() => {
@@ -50,6 +54,24 @@ export default function AdherenceScreen() {
   const takenEntries  = history.reduce((sum, d) => sum + d.entries.filter(e => e.taken).length, 0);
   const adherenceRate = totalEntries > 0 ? Math.round((takenEntries / totalEntries) * 100) : 0;
 
+  // Apply search + filter
+  const filteredHistory = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return history
+      .map(day => ({
+        ...day,
+        entries: day.entries.filter(e => {
+          const matchesSearch = q === '' || e.name.toLowerCase().includes(q);
+          const matchesFilter =
+            filter === 'all'    ? true :
+            filter === 'taken'  ? e.taken :
+            /* missed */          !e.taken;
+          return matchesSearch && matchesFilter;
+        }),
+      }))
+      .filter(day => day.entries.length > 0);
+  }, [history, search, filter]);
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -60,6 +82,33 @@ export default function AdherenceScreen() {
             <Text style={styles.backText}>← Back</Text>
           </TouchableOpacity>
           <Text style={styles.title}>📋 History</Text>
+        </View>
+
+        {/* ── Search bar ── */}
+        <View style={styles.searchRow}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search medication..."
+            placeholderTextColor="#aaa"
+            value={search}
+            onChangeText={setSearch}
+            clearButtonMode="while-editing"
+          />
+        </View>
+
+        {/* ── Filter pills ── */}
+        <View style={styles.filterRow}>
+          {(['all', 'taken', 'missed'] as FilterMode[]).map(f => (
+            <TouchableOpacity
+              key={f}
+              style={[styles.filterPill, filter === f && styles.filterPillActive]}
+              onPress={() => setFilter(f)}
+            >
+              <Text style={[styles.filterPillText, filter === f && styles.filterPillTextActive]}>
+                {f === 'all' ? 'All' : f === 'taken' ? '✓ Taken' : '✗ Missed'}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
         {/* ── 30-day Summary Card ── */}
@@ -105,8 +154,19 @@ export default function AdherenceScreen() {
           </View>
         )}
 
+        {/* ── No results from search/filter ── */}
+        {!loading && history.length > 0 && filteredHistory.length === 0 && (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyEmoji}>🔍</Text>
+            <Text style={styles.emptyTitle}>No results</Text>
+            <Text style={styles.emptyText}>
+              Try a different search term or filter.
+            </Text>
+          </View>
+        )}
+
         {/* ── Daily Log ── */}
-        {!loading && history.map(day => {
+        {!loading && filteredHistory.map(day => {
           const dayTaken  = day.entries.filter(e => e.taken).length;
           const dayTotal  = day.entries.length;
           const allTaken  = dayTaken === dayTotal;
@@ -194,4 +254,19 @@ const styles = StyleSheet.create({
   entryDosage: { fontSize: 12, color: '#999' },
   takenLabel: { fontSize: 13, fontWeight: '600', color: '#22c55e' },
   missedLabel: { fontSize: 13, fontWeight: '600', color: '#ef4444' },
+
+  // Search & filter
+  searchRow: {
+    backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 14,
+    paddingVertical: 10, borderWidth: 1, borderColor: '#eee',
+  },
+  searchInput: { fontSize: 15, color: '#1a1a1a' },
+  filterRow: { flexDirection: 'row', gap: 8 },
+  filterPill: {
+    paddingHorizontal: 16, paddingVertical: 7, borderRadius: 20,
+    backgroundColor: '#f0f0f0',
+  },
+  filterPillActive: { backgroundColor: '#1a1a1a' },
+  filterPillText: { fontSize: 13, fontWeight: '600', color: '#666' },
+  filterPillTextActive: { color: '#fff' },
 });

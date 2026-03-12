@@ -7,7 +7,7 @@ import {
 import { router, useFocusEffect } from 'expo-router';
 import { auth } from '../firebase/config';
 import { signOut } from "firebase/auth";
-import { getMedications, toggleMedication, getAdherenceForDate, deleteMedication } from '../firebase/medications';
+import { getMedications, toggleMedication, getAdherenceForDate, deleteMedication, initializeTodayAdherence } from '../firebase/medications';
 import { cancelMedNotifications } from '../utils/notifications';
 
 export default function DashboardScreen() {
@@ -33,6 +33,10 @@ export default function DashboardScreen() {
           setMedications(meds);
 
           const today = new Date().toISOString().split('T')[0];
+
+          // Initialize today's adherence — write false for any med not yet tracked
+          await initializeTodayAdherence(meds.map((m: any) => m.id));
+
           const adherence = await getAdherenceForDate(today);
           setTakenMeds(adherence);
         } catch (error) {
@@ -91,7 +95,8 @@ export default function DashboardScreen() {
     }
   };
 
-  const takenCount = Object.values(takenMeds).filter(Boolean).length;
+  const takenCount = medications.filter(m => takenMeds[m.id] === true).length;
+  const missedCount = medications.filter(m => takenMeds[m.id] === false).length;
   const totalCount = medications.length;
   const progressPercent = totalCount > 0 ? (takenCount / totalCount) * 100 : 0;
 
@@ -112,7 +117,13 @@ export default function DashboardScreen() {
           <View style={styles.progressBarBg}>
             <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
           </View>
-          <Text style={styles.progressCount}>{takenCount}/{totalCount}</Text>
+          <View style={styles.progressStats}>
+            <Text style={styles.progressStatTaken}>✓ {takenCount} taken</Text>
+            <Text style={styles.progressCount}>{takenCount}/{totalCount}</Text>
+            {missedCount > 0 && (
+              <Text style={styles.progressStatMissed}>✗ {missedCount} missed</Text>
+            )}
+          </View>
         </View>
 
         <Text style={styles.sectionTitle}>TODAY'S MEDICATIONS</Text>
@@ -129,7 +140,11 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         ) : (
           medications.map(med => (
-            <View key={med.id} style={styles.medCard}>
+            <View key={med.id} style={[
+              styles.medCard,
+              takenMeds[med.id] === true  && styles.medCardTaken,
+              takenMeds[med.id] === false && styles.medCardMissed,
+            ]}>
               <View style={styles.medIcon}><Text>💊</Text></View>
               <View style={styles.medInfo}>
                 <Text style={styles.medName}>{med.name}</Text>
@@ -276,6 +291,9 @@ const styles = StyleSheet.create({
   progressBarBg: { height: 10, backgroundColor: '#f0f0f0', borderRadius: 5, overflow: 'hidden' },
   progressBarFill: { height: '100%', backgroundColor: '#1a1a1a', borderRadius: 5 },
   progressCount: { fontSize: 14, color: '#666', textAlign: 'right' },
+  progressStats: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 },
+  progressStatTaken: { fontSize: 13, fontWeight: '600', color: '#22c55e' },
+  progressStatMissed: { fontSize: 13, fontWeight: '600', color: '#ef4444' },
   sectionTitle: { fontSize: 12, fontWeight: '700', color: '#999', letterSpacing: 1 },
   loadingText: { color: '#999', textAlign: 'center', marginTop: 20 },
   emptyCard: {
@@ -288,6 +306,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 12,
     shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
   },
+  medCardTaken:  { borderLeftWidth: 4, borderLeftColor: '#22c55e' },
+  medCardMissed: { borderLeftWidth: 4, borderLeftColor: '#ef4444' },
   medIcon: {
     width: 44, height: 44, backgroundColor: '#f5f5f5',
     borderRadius: 12, justifyContent: 'center', alignItems: 'center',

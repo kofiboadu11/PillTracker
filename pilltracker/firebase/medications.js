@@ -86,6 +86,26 @@ export const toggleMedication = async (medId, value) => {
   await setDoc(ref, { [medId]: value }, { merge: true });
 };
 
+// Write false for any med that has no entry for today yet (so history shows "Missed")
+export const initializeTodayAdherence = async (medIds) => {
+  const uid = getUID();
+  const today = new Date().toISOString().split('T')[0];
+  const ref = doc(db, 'users', uid, 'adherence', today);
+  const snap = await getDoc(ref);
+  const existing = snap.exists() ? snap.data() : {};
+
+  const updates = {};
+  for (const id of medIds) {
+    if (!(id in existing)) {
+      updates[id] = false; // default to missed until marked taken
+    }
+  }
+
+  if (Object.keys(updates).length > 0) {
+    await setDoc(ref, updates, { merge: true });
+  }
+};
+
 // Get medication history for the past N days, merged with medication names
 export const getMedicationHistory = async (days = 30) => {
   const uid = getUID();

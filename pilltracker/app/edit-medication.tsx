@@ -16,6 +16,10 @@ import { updateMedication } from '../firebase/medications';
 const FREQUENCIES = ['Daily', 'Weekly', 'As needed'];
 const FORMS = ['Tablet', 'Capsule', 'Liquid', 'Injection'];
 
+const DOSAGE_REGEX = /^\d+(\.\d+)?\s*(mg|ml|mcg|g|iu|units?|drops?|puffs?|%)/i;
+
+type Errors = { name?: string; dosage?: string };
+
 export default function EditMedicationScreen() {
   const params = useLocalSearchParams();
 
@@ -25,16 +29,26 @@ export default function EditMedicationScreen() {
   const [frequency, setFrequency] = useState(String(params.frequency || 'Daily'));
   const [notes, setNotes] = useState(String(params.notes || ''));
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<Errors>({});
 
-  const handleSave = async () => {
+  const validate = (): boolean => {
+    const newErrors: Errors = {};
     if (!name.trim()) {
-      Alert.alert('Missing info', 'Medication name cannot be empty.');
-      return;
+      newErrors.name = 'Medication name is required.';
+    } else if (name.trim().length < 2) {
+      newErrors.name = 'Name must be at least 2 characters.';
     }
     if (!dosage.trim()) {
-      Alert.alert('Missing info', 'Dosage cannot be empty.');
-      return;
+      newErrors.dosage = 'Dosage is required.';
+    } else if (!DOSAGE_REGEX.test(dosage.trim())) {
+      newErrors.dosage = 'Enter a valid dosage (e.g. 500mg, 10ml, 5mcg).';
     }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSave = async () => {
+    if (!validate()) return;
 
     setLoading(true);
     try {
@@ -46,7 +60,7 @@ export default function EditMedicationScreen() {
         notes: notes.trim(),
         updatedAt: new Date().toISOString(),
       });
-      Alert.alert('Saved', `${name} has been updated.`, [
+      Alert.alert('Saved', `${name.trim()} has been updated.`, [
         { text: 'OK', onPress: () => router.back() },
       ]);
     } catch (error) {
@@ -71,21 +85,23 @@ export default function EditMedicationScreen() {
         {/* Name */}
         <Text style={styles.label}>Medication Name</Text>
         <TextInput
-          style={styles.input}
+          style={[styles.input, errors.name && styles.inputError]}
           placeholder="e.g. Metformin"
           value={name}
-          onChangeText={setName}
+          onChangeText={t => { setName(t); if (errors.name) setErrors(e => ({ ...e, name: undefined })); }}
           autoCapitalize="words"
         />
+        {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
 
         {/* Dosage */}
         <Text style={styles.label}>Dosage</Text>
         <TextInput
-          style={styles.input}
+          style={[styles.input, errors.dosage && styles.inputError]}
           placeholder="e.g. 500mg"
           value={dosage}
-          onChangeText={setDosage}
+          onChangeText={t => { setDosage(t); if (errors.dosage) setErrors(e => ({ ...e, dosage: undefined })); }}
         />
+        {errors.dosage && <Text style={styles.errorText}>{errors.dosage}</Text>}
 
         {/* Form */}
         <Text style={styles.label}>Form</Text>
@@ -162,8 +178,10 @@ const styles = StyleSheet.create({
     padding: 14,
     fontSize: 16,
     backgroundColor: '#fafafa',
-    marginBottom: 8,
+    marginBottom: 2,
   },
+  inputError: { borderColor: '#ef4444', backgroundColor: '#fff5f5' },
+  errorText: { fontSize: 12, color: '#ef4444', marginBottom: 6, marginTop: 2 },
   notesInput: { height: 80, textAlignVertical: 'top' },
   chipRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginBottom: 8 },
   chip: {

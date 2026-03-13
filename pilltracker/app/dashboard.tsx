@@ -76,6 +76,12 @@ export default function DashboardScreen() {
               }
               await deleteMedication(medId);
               setMedications(prev => prev.filter(m => m.id !== medId));
+              // Also remove from takenMeds so progress bar updates correctly
+              setTakenMeds(prev => {
+                const updated = { ...prev };
+                delete updated[medId];
+                return updated;
+              });
             } catch (error) {
               Alert.alert('Error', 'Could not delete medication.');
             }
@@ -95,6 +101,7 @@ export default function DashboardScreen() {
     }
   };
 
+  // Calculate today's counts (explicit true/false checks to avoid undefined)
   const takenCount = medications.filter(m => takenMeds[m.id] === true).length;
   const missedCount = medications.filter(m => takenMeds[m.id] === false).length;
   const totalCount = medications.length;

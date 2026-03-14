@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   SafeAreaView,
   ScrollView,
   ActivityIndicator,
+  Animated,
 } from 'react-native';
 import { router } from 'expo-router';
 import { getMedications } from '../firebase/medications';
@@ -31,6 +32,15 @@ export default function AddMedicationScreen() {
   const [notes, setNotes]         = useState('');
   const [errors, setErrors]       = useState<Errors>({});
   const [loading, setLoading]     = useState(false);
+
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim,  { toValue: 1, duration: 400, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 400, useNativeDriver: true }),
+    ]).start();
+  }, []);
 
   const validate = async (): Promise<boolean> => {
     const newErrors: Errors = {};
@@ -77,7 +87,11 @@ export default function AddMedicationScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <Animated.ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}
+      >
 
         <Text style={styles.title}>+ Add Medication</Text>
 
@@ -158,7 +172,7 @@ export default function AddMedicationScreen() {
           }
         </TouchableOpacity>
 
-      </ScrollView>
+      </Animated.ScrollView>
     </SafeAreaView>
   );
 }

@@ -1,9 +1,12 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView,
-  ScrollView, ActivityIndicator, TouchableOpacity, TextInput, Dimensions,
+  ScrollView, ActivityIndicator, TouchableOpacity, TextInput, Dimensions, Alert,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system/legacy';
 import { getMedicationHistory } from '../firebase/medications';
 
 type FilterMode  = 'all' | 'taken' | 'missed';
@@ -216,6 +219,111 @@ export default function AdherenceScreen() {
     setSelectedDate(null);
   };
 
+  const generateCSV = async () => {
+    try {
+      let csv = 'Date,Medication,Dosage,Status\n';
+      // Use periodHistory based on current filter/period
+      const dataToExport = statPeriod === 30 ? history : periodHistory;
+      
+      for (const day of dataToExport) {
+        for (const entry of day.entries) {
+          csv += `${day.date},"${entry.name}","${entry.dosage || ''}",${entry.taken ? 'Taken' : 'Missed'}\n`;
+        }
+      }
+
+      const fileUri = FileSystem.documentDirectory + 'adherence_report.csv';
+      await FileSystem.writeAsStringAsync(fileUri, csv, { encoding: FileSystem.EncodingType.UTF8 });
+      await Sharing.shareAsync(fileUri);
+    } catch (error) {
+      Alert.alert('Error', 'Could not generate CSV report');
+    }
+  };
+
+  const generatePDF = async () => {
+    try {
+      const dataToExport = statPeriod === 30 ? history : periodHistory;
+      const html = `
+<html>
+  <head>
+    <style>
+      body { font-family: Helvetica, sans-serif; padding: 20px; }
+      h1 { text-align: center; color: #333; }
+      .summary { display: flex; justify-content: space-around; margin-bottom: 20px; border-bottom: 1px solid #ccc; padding-bottom: 20px; }
+      .stat-box { text-align: center; }
+      .stat-val { font-size: 24px; font-weight: bold; }
+      .stat-label { color: #666; font-size: 14px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+      th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+      th { background-color: #f2f2f2; }
+      .taken { color: green; font-weight: bold; }
+      .missed { color: red; font-weight: bold; }
+    </style>
+  </head>
+  <body>
+    <h1>Adherence Report</h1>
+    
+    <div class="summary">
+      <div class="stat-box">
+        <div class="stat-val">${periodRate}%</div>
+        <div class="stat-label">Adherence Rate</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-val">${periodTaken}</div>
+        <div class="stat-label">Taken</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-val">${periodMissed}</div>
+        <div class="stat-label">Missed</div>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Medication</th>
+          <th>Dosage</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${dataToExport.map(day => 
+          day.entries.map(entry => `
+            <tr>
+              <td>${day.date}</td>
+              <td>${entry.name}</td>
+              <td>${entry.dosage || '-'}</td>
+              <td class="${entry.taken ? 'taken' : 'missed'}">
+                ${entry.taken ? 'Taken' : 'Missed'}
+              </td>
+            </tr>
+          `).join('')
+        ).join('')}
+      </tbody>
+    </table>
+  </body>
+</html>
+      `;
+
+      const { uri } = await Print.printToFileAsync({ html });
+      await Sharing.shareAsync(uri);
+    } catch (error) {
+      Alert.alert('Error', 'Could not generate PDF report');
+    }
+  };
+
+  const handleExport = () => {
+    Alert.alert(
+      'Export Report', 
+      'Choose a format for your adherence report',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'CSV', onPress: generateCSV },
+        { text: 'PDF', onPress: generatePDF }
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -226,6 +334,9 @@ export default function AdherenceScreen() {
             <Text style={styles.backText}>← Back</Text>
           </TouchableOpacity>
           <Text style={styles.title}>📋 History</Text>
+          <TouchableOpacity onPress={handleExport} style={styles.exportBtn}>
+            <Text style={{ fontSize: 18 }}>📤</Text>
+          </TouchableOpacity>
           {/* View toggle */}
           <View style={styles.viewToggle}>
             <TouchableOpacity
@@ -637,6 +748,7 @@ const styles = StyleSheet.create({
   backBtn: { padding: 4 },
   backText: { fontSize: 15, color: '#555' },
   title: { fontSize: 24, fontWeight: '700', color: '#1a1a1a' },
+  exportBtn: { padding: 4, marginLeft: 8 },
 
   summaryCard: {
     backgroundColor: '#1a1a1a', borderRadius: 16, padding: 20, gap: 14,

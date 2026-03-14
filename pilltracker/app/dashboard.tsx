@@ -229,7 +229,7 @@ export default function DashboardScreen() {
     }
   };
 
-  // Today's counts (explicit true/false checks to avoid undefined)
+  // Calculate today's counts (explicit true/false checks to avoid undefined)
   const takenCount = medications.filter(m => takenMeds[m.id] === true).length;
   const missedCount = medications.filter(m => takenMeds[m.id] === false).length;
   const totalCount = medications.length;

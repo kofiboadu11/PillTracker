@@ -120,6 +120,133 @@ const calcWeekdayStats = (history: HistoryDay[]) => {
   }));
 };
 
+// ─── Chart Components ─────────────────────────────────────────────────────────
+
+/** Adherence score ring — thick colored circle with % in the center */
+function AdherenceRing({ pct }: { pct: number }) {
+  const { colors } = useTheme();
+  const ringColor = pct >= 80 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#ef4444';
+  return (
+    <View style={{ alignItems: 'center', gap: 6 }}>
+      <View style={{
+        width: 110, height: 110, borderRadius: 55,
+        borderWidth: 10, borderColor: ringColor,
+        backgroundColor: ringColor + '18',
+        justifyContent: 'center', alignItems: 'center',
+      }}>
+        <Text style={{ fontSize: 28, fontWeight: '800', color: ringColor }}>{pct}%</Text>
+        <Text style={{ fontSize: 10, color: colors.textMuted, fontWeight: '600' }}>Adherence</Text>
+      </View>
+    </View>
+  );
+}
+
+/** Chronological 7-day bar chart */
+function WeeklyTrendChart({ history }: { history: HistoryDay[] }) {
+  const { colors } = useTheme();
+  const BAR_MAX_H = 80;
+
+  const data = useMemo(() => {
+    // history[0]=today → reverse last 7 for chronological L→R display
+    return history.slice(0, 7).reverse().map(day => {
+      const total = day.entries.length;
+      const taken = day.entries.filter(e => e.taken).length;
+      const pct   = total > 0 ? Math.round((taken / total) * 100) : null;
+      const d     = new Date(day.date + 'T00:00:00');
+      return {
+        date:  day.date,
+        label: d.toLocaleDateString('en-US', { weekday: 'short' }),
+        dayNum: d.getDate(),
+        pct,
+      };
+    });
+  }, [history]);
+
+  if (data.length === 0) {
+    return <Text style={{ color: colors.textMuted, fontSize: 13, textAlign: 'center', paddingVertical: 16 }}>No data yet for this period.</Text>;
+  }
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 6, height: BAR_MAX_H + 46 }}>
+      {data.map(({ date, label, dayNum, pct }) => {
+        const barH     = pct !== null ? Math.max(6, (pct / 100) * BAR_MAX_H) : 4;
+        const barColor = pct === null ? colors.skeleton
+          : pct >= 80 ? '#22c55e'
+          : pct >= 50 ? '#f59e0b'
+          : '#ef4444';
+        return (
+          <View key={date} style={{ flex: 1, alignItems: 'center', gap: 3 }}>
+            <Text style={{ fontSize: 10, fontWeight: '700', color: pct !== null ? barColor : colors.textMuted, height: 14 }}>
+              {pct !== null ? `${pct}%` : ''}
+            </Text>
+            <View style={{ height: BAR_MAX_H, justifyContent: 'flex-end', width: '100%' }}>
+              <View style={{ height: barH, backgroundColor: barColor, borderRadius: 6, width: '100%' }} />
+            </View>
+            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text }}>{label}</Text>
+            <Text style={{ fontSize: 10, color: colors.textMuted }}>{dayNum}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+/** 30-day adherence heatmap grid */
+function MonthlyHeatmap({ history }: { history: HistoryDay[] }) {
+  const { colors } = useTheme();
+
+  const data = useMemo(() => {
+    return history.slice(0, 30).reverse().map(day => {
+      const total = day.entries.length;
+      const taken = day.entries.filter(e => e.taken).length;
+      const pct   = total > 0 ? Math.round((taken / total) * 100) : null;
+      const d     = new Date(day.date + 'T00:00:00');
+      return { date: day.date, pct, dayNum: d.getDate() };
+    });
+  }, [history]);
+
+  if (data.length === 0) {
+    return <Text style={{ color: colors.textMuted, fontSize: 13, textAlign: 'center', paddingVertical: 16 }}>No data yet.</Text>;
+  }
+
+  return (
+    <View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: 12 }}>
+        {data.map(({ date, pct, dayNum }) => {
+          const bg = pct === null ? colors.skeleton
+            : pct >= 80 ? '#22c55e'
+            : pct >= 50 ? '#f59e0b'
+            : '#ef4444';
+          const opacity = pct === null ? 0.4 : 0.25 + (pct / 100) * 0.75;
+          return (
+            <View
+              key={date}
+              style={{
+                width: 30, height: 30, borderRadius: 7,
+                backgroundColor: bg, opacity,
+                justifyContent: 'center', alignItems: 'center',
+              }}
+            >
+              <Text style={{ fontSize: 9, fontWeight: '700', color: '#fff' }}>{dayNum}</Text>
+            </View>
+          );
+        })}
+      </View>
+      {/* Legend */}
+      <View style={{ flexDirection: 'row', gap: 14, justifyContent: 'center' }}>
+        {[['#22c55e', '≥80%'], ['#f59e0b', '50–79%'], ['#ef4444', '<50%']].map(([c, l]) => (
+          <View key={l} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <View style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: c }} />
+            <Text style={{ fontSize: 11, color: colors.textMuted }}>{l}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
+
 export default function AdherenceScreen() {
   const [history, setHistory]       = useState<HistoryDay[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -534,24 +661,23 @@ export default function AdherenceScreen() {
                   ))}
                 </View>
 
-                {/* Overview row */}
-                <View style={styles.statsOverviewRow}>
-                  <View style={[styles.statsOverviewCard, { backgroundColor: '#f0fdf4' }]}>
-                    <Text style={styles.statsOverviewValue}>{periodRate}%</Text>
-                    <Text style={styles.statsOverviewLabel}>Adherence</Text>
-                  </View>
-                  <View style={[styles.statsOverviewCard, { backgroundColor: '#f0fdf4' }]}>
-                    <Text style={[styles.statsOverviewValue, { color: '#22c55e' }]}>{periodTaken}</Text>
-                    <Text style={styles.statsOverviewLabel}>Taken</Text>
-                  </View>
-                  <View style={[styles.statsOverviewCard, { backgroundColor: '#fef2f2' }]}>
-                    <Text style={[styles.statsOverviewValue, { color: '#ef4444' }]}>{periodMissed}</Text>
-                    <Text style={styles.statsOverviewLabel}>Missed</Text>
+                {/* Adherence ring + stats side by side */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                  <AdherenceRing pct={periodRate} />
+                  <View style={{ flex: 1, gap: 10 }}>
+                    <View style={[styles.statsOverviewCard, { backgroundColor: '#f0fdf4', flex: 0 }]}>
+                      <Text style={[styles.statsOverviewValue, { color: '#22c55e', fontSize: 22 }]}>{periodTaken}</Text>
+                      <Text style={styles.statsOverviewLabel}>Doses Taken</Text>
+                    </View>
+                    <View style={[styles.statsOverviewCard, { backgroundColor: '#fef2f2', flex: 0 }]}>
+                      <Text style={[styles.statsOverviewValue, { color: '#ef4444', fontSize: 22 }]}>{periodMissed}</Text>
+                      <Text style={styles.statsOverviewLabel}>Doses Missed</Text>
+                    </View>
                   </View>
                 </View>
 
                 {/* Streak card */}
-                <View style={styles.streakCard}>
+                <View style={[styles.streakCard, { backgroundColor: colors.card }]}>
                   <View style={styles.streakLeft}>
                     <Text style={styles.streakEmoji}>🔥</Text>
                     <View>
@@ -566,9 +692,27 @@ export default function AdherenceScreen() {
                   </Text>
                 </View>
 
+                {/* 7-Day Trend Chart */}
+                <View style={[styles.statsCard, { backgroundColor: colors.card }]}>
+                  <Text style={[styles.statsCardTitle, { color: colors.text }]}>7-Day Adherence Trend</Text>
+                  <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 8, marginTop: -8 }}>
+                    Daily adherence % over the past week
+                  </Text>
+                  <WeeklyTrendChart history={history} />
+                </View>
+
+                {/* 30-Day Monthly Heatmap */}
+                <View style={[styles.statsCard, { backgroundColor: colors.card }]}>
+                  <Text style={[styles.statsCardTitle, { color: colors.text }]}>30-Day Overview</Text>
+                  <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 12, marginTop: -8 }}>
+                    Each cell = one day · darker = higher adherence
+                  </Text>
+                  <MonthlyHeatmap history={history} />
+                </View>
+
                 {/* Best / Worst day */}
-                <View style={styles.statsCard}>
-                  <Text style={styles.statsCardTitle}>Best & Worst Day</Text>
+                <View style={[styles.statsCard, { backgroundColor: colors.card }]}>
+                  <Text style={[styles.statsCardTitle, { color: colors.text }]}>Best & Worst Day</Text>
                   <View style={styles.bestWorstRow}>
                     <View style={styles.bestWorstItem}>
                       <Text style={styles.bestWorstEmoji}>🌟</Text>
@@ -589,8 +733,8 @@ export default function AdherenceScreen() {
                 </View>
 
                 {/* Weekday bar chart */}
-                <View style={styles.statsCard}>
-                  <Text style={styles.statsCardTitle}>Adherence by Day of Week</Text>
+                <View style={[styles.statsCard, { backgroundColor: colors.card }]}>
+                  <Text style={[styles.statsCardTitle, { color: colors.text }]}>Adherence by Day of Week</Text>
                   <View style={styles.weekdayChart}>
                     {weekdayStats.map(({ label, pct }) => (
                       <View key={label} style={styles.weekdayCol}>
@@ -616,8 +760,8 @@ export default function AdherenceScreen() {
                 </View>
 
                 {/* Per-medication breakdown */}
-                <View style={styles.statsCard}>
-                  <Text style={styles.statsCardTitle}>Per Medication</Text>
+                <View style={[styles.statsCard, { backgroundColor: colors.card }]}>
+                  <Text style={[styles.statsCardTitle, { color: colors.text }]}>Per Medication</Text>
                   {medStats.map((med, i) => {
                     const total = med.taken + med.missed;
                     const pct   = total > 0 ? Math.round((med.taken / total) * 100) : 0;
@@ -873,7 +1017,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff', borderRadius: 14, padding: 16, gap: 14,
     shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
   },
-  statsCardTitle: { fontSize: 14, fontWeight: '700', color: '#1a1a1a' },
+  statsCardTitle: { fontSize: 14, fontWeight: '700', color: '#1a1a1a', marginBottom: 2 },
 
   bestWorstRow: { flexDirection: 'row', alignItems: 'center' },
   bestWorstItem: { flex: 1, alignItems: 'center', gap: 4 },

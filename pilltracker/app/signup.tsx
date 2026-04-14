@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { auth } from '../firebase/config';
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from 'firebase/auth';
 import { useTheme } from '../utils/theme';
 
 export default function SignUpScreen() {
@@ -39,7 +39,12 @@ export default function SignUpScreen() {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       await updateProfile(userCredential.user, { displayName: fullName });
-      router.replace('/dashboard' as any);
+      await sendEmailVerification(userCredential.user);
+      Alert.alert(
+        'Verify your email',
+        `A verification link has been sent to ${email}. Please check your inbox before signing in.`,
+        [{ text: 'OK', onPress: () => router.replace('/login' as any) }]
+      );
     } catch (error: any) {
       Alert.alert('Sign up failed', error.message);
     } finally {

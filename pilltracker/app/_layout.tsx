@@ -49,6 +49,7 @@ export default function RootLayout() {
         <Stack.Screen name="confirmation" />
         <Stack.Screen name="adherence" />
         <Stack.Screen name="settings" />
+        <Stack.Screen name="forgot-password" />
       </Stack>
     </ThemeProvider>
   );

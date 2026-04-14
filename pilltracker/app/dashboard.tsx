@@ -8,8 +8,13 @@ import { router, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { auth } from '../firebase/config';
 import { signOut } from 'firebase/auth';
-import { getMedications, toggleMedication, getAdherenceForDate, deleteMedication, initializeTodayAdherence } from '../firebase/medications';
+import {
+  getMedications, toggleMedication, getAdherenceForDate,
+  deleteMedication, initializeTodayAdherence,
+  decrementPillsRemaining, getRefillStatus,
+} from '../firebase/medications';
 import { cancelMedNotifications } from '../utils/notifications';
+import { useTheme } from '../utils/theme';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.35;
@@ -30,29 +35,42 @@ function SkeletonPulse({ style }: { style: any }) {
   return <Animated.View style={[style, { opacity }]} />;
 }
 
-// ─── Skeleton Card ────────────────────────────────────────────────────────────
-function SkeletonCard() {
+function SkeletonCard({ colors }: { colors: any }) {
+  const sk = skeletonStyles(colors);
   return (
-    <View style={skeletonStyles.card}>
-      <SkeletonPulse style={skeletonStyles.icon} />
+    <View style={sk.card}>
+      <SkeletonPulse style={sk.icon} />
       <View style={{ flex: 1, gap: 8 }}>
-        <SkeletonPulse style={skeletonStyles.lineWide} />
-        <SkeletonPulse style={skeletonStyles.lineNarrow} />
+        <SkeletonPulse style={sk.lineWide} />
+        <SkeletonPulse style={sk.lineNarrow} />
       </View>
-      <SkeletonPulse style={skeletonStyles.circle} />
+      <SkeletonPulse style={sk.circle} />
+    </View>
+  );
+}
+
+// ─── Refill Badge ─────────────────────────────────────────────────────────────
+function RefillBadge({ daysRemaining }: { daysRemaining: number }) {
+  const color = daysRemaining <= 3 ? '#ef4444' : '#f59e0b';
+  return (
+    <View style={{ backgroundColor: color + '22', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, marginTop: 4 }}>
+      <Text style={{ fontSize: 11, fontWeight: '700', color }}>
+        {daysRemaining === 0 ? '⚠️ Out of pills — refill now!' : `🔁 ~${daysRemaining}d supply left`}
+      </Text>
     </View>
   );
 }
 
 // ─── Swipeable Med Card ───────────────────────────────────────────────────────
 function SwipeableMedCard({
-  med, taken, onToggle, onEdit, onDelete,
+  med, taken, onToggle, onEdit, onDelete, colors,
 }: {
   med: any;
   taken: boolean | undefined;
   onToggle: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  colors: any;
 }) {
   const translateX = useRef(new Animated.Value(0)).current;
   const slideIn    = useRef(new Animated.Value(30)).current;
@@ -60,24 +78,19 @@ function SwipeableMedCard({
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(fadeIn,   { toValue: 1, duration: 350, useNativeDriver: true }),
-      Animated.timing(slideIn,  { toValue: 0, duration: 350, useNativeDriver: true }),
+      Animated.timing(fadeIn,  { toValue: 1, duration: 350, useNativeDriver: true }),
+      Animated.timing(slideIn, { toValue: 0, duration: 350, useNativeDriver: true }),
     ]).start();
   }, []);
 
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 8 && Math.abs(g.dy) < 20,
-      onPanResponderMove: (_, g) => {
-        if (g.dx < 0) translateX.setValue(g.dx);
-      },
+      onPanResponderMove: (_, g) => { if (g.dx < 0) translateX.setValue(g.dx); },
       onPanResponderRelease: (_, g) => {
         if (g.dx < -SWIPE_THRESHOLD) {
-          Animated.timing(translateX, {
-            toValue: -SCREEN_WIDTH,
-            duration: 250,
-            useNativeDriver: true,
-          }).start(() => onDelete());
+          Animated.timing(translateX, { toValue: -SCREEN_WIDTH, duration: 250, useNativeDriver: true })
+            .start(() => onDelete());
         } else {
           Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
         }
@@ -85,34 +98,45 @@ function SwipeableMedCard({
     })
   ).current;
 
+  const s = cardStyles(colors);
+  const refillStatus = getRefillStatus(med);
+  const allTimes: string[] = Array.isArray(med.times) ? med.times : (med.times ? [med.times] : []);
+
   return (
     <View style={{ overflow: 'hidden', borderRadius: 16, marginBottom: 0 }}>
-      {/* Delete hint revealed underneath */}
-      <View style={styles.deleteHint}>
-        <Text style={styles.deleteHintText}>🗑️  Delete</Text>
+      <View style={s.deleteHint}>
+        <Text style={s.deleteHintText}>🗑️  Delete</Text>
       </View>
       <Animated.View
         style={{ transform: [{ translateX }], opacity: fadeIn, translateY: slideIn }}
         {...panResponder.panHandlers}
       >
         <View style={[
-          styles.medCard,
-          taken === true  && styles.medCardTaken,
-          taken === false && styles.medCardMissed,
+          s.medCard,
+          taken === true  && s.medCardTaken,
+          taken === false && s.medCardMissed,
         ]}>
-          <View style={styles.medIcon}><Text>💊</Text></View>
-          <View style={styles.medInfo}>
-            <Text style={styles.medName}>{med.name}</Text>
-            <Text style={styles.medDetails}>{med.dosage} · {med.times?.[0]}</Text>
+          <View style={s.medIcon}><Text>💊</Text></View>
+
+          <View style={s.medInfo}>
+            <Text style={s.medName}>{med.name}</Text>
+            <Text style={s.medDetails}>
+              {med.dosage}
+              {allTimes.length > 0 ? ' · ' + allTimes.join(' · ') : ''}
+            </Text>
+            {refillStatus?.shouldAlert && (
+              <RefillBadge daysRemaining={refillStatus.daysRemaining} />
+            )}
           </View>
-          <TouchableOpacity style={styles.editButton} onPress={onEdit}>
-            <Text style={styles.editIcon}>✏️</Text>
+
+          <TouchableOpacity style={s.editButton} onPress={onEdit}>
+            <Text style={s.editIcon}>✏️</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.checkButton, taken && styles.checkButtonDone]}
+            style={[s.checkButton, taken && s.checkButtonDone]}
             onPress={onToggle}
           >
-            {taken && <Text style={styles.checkMark}>✓</Text>}
+            {taken && <Text style={s.checkMark}>✓</Text>}
           </TouchableOpacity>
         </View>
       </Animated.View>
@@ -120,17 +144,18 @@ function SwipeableMedCard({
   );
 }
 
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function DashboardScreen() {
+  const { colors } = useTheme();
+  const s = makeStyles(colors);
+
   const [medications, setMedications] = useState<any[]>([]);
-  const [takenMeds, setTakenMeds] = useState<Record<string, boolean>>({});
-  const [loading, setLoading] = useState(true);
+  const [takenMeds, setTakenMeds]     = useState<Record<string, boolean>>({});
+  const [loading, setLoading]         = useState(true);
   const [profileMenuVisible, setProfileMenuVisible] = useState(false);
 
-  // Screen entrance animation
   const screenFade  = useRef(new Animated.Value(0)).current;
   const screenSlide = useRef(new Animated.Value(24)).current;
-
-  // Animated progress bar
   const progressAnim = useRef(new Animated.Value(0)).current;
 
   const userName = auth.currentUser?.displayName?.split(' ')[0] || 'there';
@@ -144,7 +169,6 @@ export default function DashboardScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      // Entrance animation on every focus
       screenFade.setValue(0);
       screenSlide.setValue(24);
       Animated.parallel([
@@ -156,12 +180,11 @@ export default function DashboardScreen() {
         try {
           const meds = await getMedications();
           setMedications(meds);
-
           const today = new Date().toISOString().split('T')[0];
           await initializeTodayAdherence(meds.map((m: any) => m.id));
           const adherence = await getAdherenceForDate(today);
           setTakenMeds(adherence);
-        } catch (error) {
+        } catch {
           Alert.alert('Error', 'Could not load medications.');
         } finally {
           setLoading(false);
@@ -171,18 +194,29 @@ export default function DashboardScreen() {
     }, [])
   );
 
-  const handleMarkTaken = async (medId: string) => {
+  const handleMarkTaken = async (med: any) => {
     try {
-      const newValue = !takenMeds[medId];
-      await toggleMedication(medId, newValue);
-      setTakenMeds(prev => ({ ...prev, [medId]: newValue }));
-      // Haptic feedback
+      const newValue = !takenMeds[med.id];
+      await toggleMedication(med.id, newValue);
+      setTakenMeds(prev => ({ ...prev, [med.id]: newValue }));
+
       if (newValue) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        // Decrement pill count if refill tracking is on
+        const remaining = await decrementPillsRemaining(med.id);
+        if (typeof remaining === 'number') {
+          const refillStatus = getRefillStatus({ ...med, refillTracking: { ...med.refillTracking, pillsRemaining: remaining } });
+          if (refillStatus?.shouldAlert) {
+            const msg = refillStatus.daysRemaining === 0
+              ? `You are out of ${med.name}. Please refill now!`
+              : `You have approximately ${refillStatus.daysRemaining} day(s) of ${med.name} remaining. Time to refill soon.`;
+            setTimeout(() => Alert.alert('💊 Refill Reminder', msg), 500);
+          }
+        }
       } else {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Could not update medication status.');
     }
   };
@@ -194,23 +228,15 @@ export default function DashboardScreen() {
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete',
-          style: 'destructive',
+          text: 'Delete', style: 'destructive',
           onPress: async () => {
             try {
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-              if (notificationIds.length > 0) {
-                await cancelMedNotifications(notificationIds);
-              }
+              if (notificationIds.length > 0) await cancelMedNotifications(notificationIds);
               await deleteMedication(medId);
               setMedications(prev => prev.filter(m => m.id !== medId));
-              // Also remove from takenMeds so progress bar updates correctly
-              setTakenMeds(prev => {
-                const updated = { ...prev };
-                delete updated[medId];
-                return updated;
-              });
-            } catch (error) {
+              setTakenMeds(prev => { const u = { ...prev }; delete u[medId]; return u; });
+            } catch {
               Alert.alert('Error', 'Could not delete medication.');
             }
           },
@@ -223,312 +249,235 @@ export default function DashboardScreen() {
     try {
       await signOut(auth);
       setProfileMenuVisible(false);
-      router.replace('/login');
-    } catch (error) {
+      router.replace('/login' as any);
+    } catch {
       Alert.alert('Error', 'Could not log out.');
     }
   };
 
-  // Calculate today's counts (explicit true/false checks to avoid undefined)
-  const takenCount = medications.filter(m => takenMeds[m.id] === true).length;
-  const missedCount = medications.filter(m => takenMeds[m.id] === false).length;
-  const totalCount = medications.length;
+  const takenCount   = medications.filter(m => takenMeds[m.id] === true).length;
+  const missedCount  = medications.filter(m => takenMeds[m.id] === false).length;
+  const totalCount   = medications.length;
   const progressPercent = totalCount > 0 ? (takenCount / totalCount) * 100 : 0;
 
-  // Animate progress bar whenever percent changes
   useEffect(() => {
     Animated.timing(progressAnim, {
-      toValue: progressPercent,
-      duration: 600,
-      useNativeDriver: false,
+      toValue: progressPercent, duration: 600, useNativeDriver: false,
     }).start();
   }, [progressPercent]);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={s.container}>
       <Animated.View style={{ flex: 1, opacity: screenFade, transform: [{ translateY: screenSlide }] }}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+        <ScrollView contentContainerStyle={s.scroll}>
 
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>{getGreeting()},</Text>
-            <Text style={styles.userName}>{userName}</Text>
+          <View style={s.header}>
+            <View>
+              <Text style={s.greeting}>{getGreeting()},</Text>
+              <Text style={s.userName}>{userName}</Text>
+            </View>
+            <TouchableOpacity onPress={() => router.push('/settings' as any)}>
+              <Text style={s.settingsText}>⚙️</Text>
+            </TouchableOpacity>
           </View>
-          <Text style={styles.settingsText}>⚙️</Text>
-        </View>
 
-        <View style={styles.progressCard}>
-          <Text style={styles.progressLabel}>Today's Progress</Text>
-          <View style={styles.progressBarBg}>
-            <Animated.View style={[
-              styles.progressBarFill,
-              { width: progressAnim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }) },
-            ]} />
+          <View style={s.progressCard}>
+            <Text style={s.progressLabel}>Today's Progress</Text>
+            <View style={s.progressBarBg}>
+              <Animated.View style={[
+                s.progressBarFill,
+                { width: progressAnim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }) },
+              ]} />
+            </View>
+            <View style={s.progressStats}>
+              <Text style={s.progressStatTaken}>✓ {takenCount} taken</Text>
+              <Text style={s.progressCount}>{takenCount}/{totalCount}</Text>
+              {missedCount > 0 && (
+                <Text style={s.progressStatMissed}>✗ {missedCount} missed</Text>
+              )}
+            </View>
           </View>
-          <View style={styles.progressStats}>
-            <Text style={styles.progressStatTaken}>✓ {takenCount} taken</Text>
-            <Text style={styles.progressCount}>{takenCount}/{totalCount}</Text>
-            {missedCount > 0 && (
-              <Text style={styles.progressStatMissed}>✗ {missedCount} missed</Text>
-            )}
-          </View>
-        </View>
 
-        <Text style={styles.sectionTitle}>TODAY'S MEDICATIONS</Text>
+          <Text style={s.sectionTitle}>TODAY'S MEDICATIONS</Text>
 
-        {loading ? (
-          <>
-            <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
-          </>
-        ) : medications.length === 0 ? (
-          <TouchableOpacity
-            style={styles.emptyCard}
-            // @ts-ignore
-            onPress={() => router.push('/add-medication')}
-          >
-            <Text style={styles.emptyText}>+ Add your first medication</Text>
-          </TouchableOpacity>
-        ) : (
-          medications.map(med => (
-            <SwipeableMedCard
-              key={med.id}
-              med={med}
-              taken={takenMeds[med.id]}
-              onToggle={() => handleMarkTaken(med.id)}
-              onEdit={() => router.push({
-                // @ts-ignore
-                pathname: '/edit-medication',
-                params: {
-                  id: med.id,
-                  name: med.name,
-                  dosage: med.dosage,
-                  form: med.form,
-                  frequency: med.frequency,
-                  notes: med.notes ?? '',
-                },
-              })}
-              onDelete={() => handleDelete(med.id, med.name, med.notificationIds ?? [])}
-            />
-          ))
-        )}
-      </ScrollView>
+          {loading ? (
+            <>
+              <SkeletonCard colors={colors} />
+              <SkeletonCard colors={colors} />
+              <SkeletonCard colors={colors} />
+            </>
+          ) : medications.length === 0 ? (
+            <TouchableOpacity
+              style={s.emptyCard}
+              onPress={() => router.push('/add-medication' as any)}
+            >
+              <Text style={s.emptyText}>+ Add your first medication</Text>
+            </TouchableOpacity>
+          ) : (
+            medications.map(med => (
+              <SwipeableMedCard
+                key={med.id}
+                med={med}
+                taken={takenMeds[med.id]}
+                onToggle={() => handleMarkTaken(med)}
+                onEdit={() => router.push({
+                  pathname: '/edit-medication' as any,
+                  params: {
+                    id: med.id, name: med.name, dosage: med.dosage,
+                    form: med.form, frequency: med.frequency, notes: med.notes ?? '',
+                    photoUri: med.photoUri ?? '',
+                  },
+                })}
+                onDelete={() => handleDelete(med.id, med.name, med.notificationIds ?? [])}
+                colors={colors}
+              />
+            ))
+          )}
+        </ScrollView>
       </Animated.View>
 
+      {/* Profile modal */}
       <Modal
         visible={profileMenuVisible}
         animationType="slide"
-        transparent={true}
+        transparent
         onRequestClose={() => setProfileMenuVisible(false)}
       >
         <TouchableOpacity
-          style={styles.modalOverlay}
+          style={s.modalOverlay}
           activeOpacity={1}
           onPress={() => setProfileMenuVisible(false)}
         >
-          <View style={styles.profileMenu}>
-            <Text style={styles.profileName}>
-              {auth.currentUser?.displayName || 'User'}
-            </Text>
-            <Text style={styles.profileEmail}>
-              {auth.currentUser?.email || 'No email available'}
-            </Text>
+          <View style={s.profileMenu}>
+            <Text style={s.profileName}>{auth.currentUser?.displayName || 'User'}</Text>
+            <Text style={s.profileEmail}>{auth.currentUser?.email || ''}</Text>
 
-            <TouchableOpacity style={styles.menuItem}>
-              <Text style={styles.menuText}>Profile</Text>
-            </TouchableOpacity>
+            {[
+              { label: 'Settings',         route: '/settings'       },
+              { label: 'Adherence Report', route: '/adherence'      },
+              { label: 'Add Medication',   route: '/add-medication' },
+              { label: 'Set Reminders',    route: '/set-reminders'  },
+            ].map(({ label, route }) => (
+              <TouchableOpacity
+                key={route}
+                style={s.menuItem}
+                onPress={() => { setProfileMenuVisible(false); router.push(route as any); }}
+              >
+                <Text style={s.menuText}>{label}</Text>
+              </TouchableOpacity>
+            ))}
 
-            <TouchableOpacity
-              style={styles.menuItem}
-              // @ts-ignore
-              onPress={() => {
-                setProfileMenuVisible(false);
-                router.push('/adherence');
-              }}
-            >
-              <Text style={styles.menuText}>Adherence Report</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.menuItem}
-              // @ts-ignore
-              onPress={() => {
-                setProfileMenuVisible(false);
-                router.push('/add-medication');
-              }}
-            >
-              <Text style={styles.menuText}>Manage Medications</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.menuItem}
-              // @ts-ignore
-              onPress={() => {
-                setProfileMenuVisible(false);
-                router.push('/set-reminders');
-              }}
-            >
-              <Text style={styles.menuText}>Set Reminders</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.logoutItem} onPress={handleLogout}>
-              <Text style={styles.logoutText}>Logout</Text>
+            <TouchableOpacity style={s.logoutItem} onPress={handleLogout}>
+              <Text style={s.logoutText}>Logout</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
       </Modal>
 
-      <View style={styles.bottomNav}>
-        <TouchableOpacity style={styles.navItem}>
-          <Text style={styles.navIcon}>🏠</Text>
+      {/* Bottom nav */}
+      <View style={s.bottomNav}>
+        <TouchableOpacity style={s.navItem}>
+          <Text style={s.navIcon}>🏠</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.navItem}
-          // @ts-ignore
-          onPress={() => router.push('/add-medication')}
-        >
-          <Text style={styles.navIcon}>💊</Text>
+        <TouchableOpacity style={s.navItem} onPress={() => router.push('/add-medication' as any)}>
+          <Text style={s.navIcon}>💊</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.navItem}
-          // @ts-ignore
-          onPress={() => router.push('/adherence')}
-        >
-          <Text style={styles.navIcon}>📈</Text>
+        <TouchableOpacity style={s.navItem} onPress={() => router.push('/adherence' as any)}>
+          <Text style={s.navIcon}>📈</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => setProfileMenuVisible(true)}
-        >
-          <Text style={styles.navIcon}>👤</Text>
+        <TouchableOpacity style={s.navItem} onPress={() => setProfileMenuVisible(true)}>
+          <Text style={s.navIcon}>👤</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9f9f9' },
-  scroll: { padding: 20, gap: 16, paddingBottom: 100 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  greeting: { fontSize: 16, color: '#666' },
-  userName: { fontSize: 28, fontWeight: 'bold', color: '#1a1a1a' },
-  settingsText: { fontSize: 22, padding: 8 },
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+const makeStyles = (c: ReturnType<typeof useTheme>['colors']) => StyleSheet.create({
+  container:           { flex: 1, backgroundColor: c.background },
+  scroll:              { padding: 20, gap: 16, paddingBottom: 100 },
+  header:              { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  greeting:            { fontSize: 16, color: c.textSecondary },
+  userName:            { fontSize: 28, fontWeight: 'bold', color: c.text },
+  settingsText:        { fontSize: 22, padding: 8 },
+
   progressCard: {
-    backgroundColor: '#fff', borderRadius: 16, padding: 20, gap: 10,
+    backgroundColor: c.card, borderRadius: 16, padding: 20, gap: 10,
     shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
   },
-  progressLabel: { fontSize: 14, fontWeight: '600', color: '#333' },
-  progressBarBg: { height: 10, backgroundColor: '#f0f0f0', borderRadius: 5, overflow: 'hidden' },
-  progressBarFill: { height: '100%', backgroundColor: '#1a1a1a', borderRadius: 5 },
-  progressCount: { fontSize: 14, color: '#666', textAlign: 'right' },
-  progressStats: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 },
-  progressStatTaken: { fontSize: 13, fontWeight: '600', color: '#22c55e' },
-  progressStatMissed: { fontSize: 13, fontWeight: '600', color: '#ef4444' },
-  sectionTitle: { fontSize: 12, fontWeight: '700', color: '#999', letterSpacing: 1 },
-  loadingText: { color: '#999', textAlign: 'center', marginTop: 20 },
+  progressLabel:       { fontSize: 14, fontWeight: '600', color: c.text },
+  progressBarBg:       { height: 10, backgroundColor: c.border, borderRadius: 5, overflow: 'hidden' },
+  progressBarFill:     { height: '100%', backgroundColor: c.primary, borderRadius: 5 },
+  progressStats:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 },
+  progressCount:       { fontSize: 14, color: c.textSecondary, textAlign: 'right' },
+  progressStatTaken:   { fontSize: 13, fontWeight: '600', color: c.success },
+  progressStatMissed:  { fontSize: 13, fontWeight: '600', color: c.error },
+
+  sectionTitle: { fontSize: 12, fontWeight: '700', color: c.textMuted, letterSpacing: 1 },
+
   emptyCard: {
-    backgroundColor: '#fff', borderRadius: 16, padding: 30,
-    alignItems: 'center', borderWidth: 1, borderColor: '#eee', borderStyle: 'dashed',
+    backgroundColor: c.card, borderRadius: 16, padding: 30,
+    alignItems: 'center', borderWidth: 1, borderColor: c.border, borderStyle: 'dashed',
   },
-  emptyText: { color: '#999', fontSize: 16 },
+  emptyText: { color: c.textMuted, fontSize: 16 },
+
+  bottomNav: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: c.navBg, flexDirection: 'row', justifyContent: 'space-around',
+    paddingVertical: 12, borderTopWidth: 1, borderTopColor: c.border,
+  },
+  navItem: { padding: 8 },
+  navIcon: { fontSize: 22 },
+
+  modalOverlay: {
+    flex: 1, backgroundColor: c.overlay, justifyContent: 'flex-end',
+  },
+  profileMenu: {
+    backgroundColor: c.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 12,
+  },
+  profileName:  { fontSize: 22, fontWeight: '700', color: c.text },
+  profileEmail: { fontSize: 14, color: c.textSecondary, marginBottom: 10 },
+  menuItem:     { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: c.border },
+  menuText:     { fontSize: 16, color: c.text },
+  logoutItem:   { marginTop: 10, paddingVertical: 14, alignItems: 'center', backgroundColor: c.primary, borderRadius: 12 },
+  logoutText:   { color: c.primaryText, fontSize: 16, fontWeight: '600' },
+});
+
+const cardStyles = (c: ReturnType<typeof useTheme>['colors']) => StyleSheet.create({
   medCard: {
-    backgroundColor: '#fff', borderRadius: 16, padding: 16,
+    backgroundColor: c.card, borderRadius: 16, padding: 16,
     flexDirection: 'row', alignItems: 'center', gap: 12,
     shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
   },
-  medCardTaken:  { borderLeftWidth: 4, borderLeftColor: '#22c55e' },
-  medCardMissed: { borderLeftWidth: 4, borderLeftColor: '#ef4444' },
-  medIcon: {
-    width: 44, height: 44, backgroundColor: '#f5f5f5',
-    borderRadius: 12, justifyContent: 'center', alignItems: 'center',
-  },
-  medInfo: { flex: 1 },
-  medName: { fontSize: 16, fontWeight: '600', color: '#1a1a1a' },
-  medDetails: { fontSize: 13, color: '#888', marginTop: 2 },
-  checkButton: {
-    width: 32, height: 32, borderRadius: 16,
-    borderWidth: 2, borderColor: '#ddd', justifyContent: 'center', alignItems: 'center',
-  },
-  checkButtonDone: { backgroundColor: '#1a1a1a', borderColor: '#1a1a1a' },
-  checkMark: { color: '#fff', fontWeight: 'bold' },
-  editButton: {
-    width: 32, height: 32, borderRadius: 8,
-    justifyContent: 'center', alignItems: 'center',
-  },
-  editIcon: { fontSize: 16 },
-  deleteButton: {
-    width: 32, height: 32, borderRadius: 8,
-    justifyContent: 'center', alignItems: 'center',
-  },
-  deleteIcon: { fontSize: 16 },
+  medCardTaken:    { borderLeftWidth: 4, borderLeftColor: '#22c55e' },
+  medCardMissed:   { borderLeftWidth: 4, borderLeftColor: '#ef4444' },
+  medIcon:         { width: 44, height: 44, backgroundColor: c.border, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  medInfo:         { flex: 1 },
+  medName:         { fontSize: 16, fontWeight: '600', color: c.text },
+  medDetails:      { fontSize: 13, color: c.textSecondary, marginTop: 2 },
+  checkButton:     { width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: c.border, justifyContent: 'center', alignItems: 'center' },
+  checkButtonDone: { backgroundColor: c.primary, borderColor: c.primary },
+  checkMark:       { color: c.primaryText, fontWeight: 'bold' },
+  editButton:      { width: 32, height: 32, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  editIcon:        { fontSize: 16 },
   deleteHint: {
     position: 'absolute', top: 0, bottom: 0, right: 0, left: 0,
     backgroundColor: '#ef4444', borderRadius: 16,
     justifyContent: 'center', alignItems: 'flex-end', paddingRight: 24,
   },
   deleteHintText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  bottomNav: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: '#fff', flexDirection: 'row', justifyContent: 'space-around',
-    paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#eee',
-  },
-  navItem: { padding: 8 },
-  navIcon: { fontSize: 22 },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    justifyContent: 'flex-end',
-  },
-  profileMenu: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    gap: 12,
-  },
-  profileName: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#1a1a1a',
-  },
-  profileEmail: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 10,
-  },
-  menuItem: {
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  menuText: {
-    fontSize: 16,
-    color: '#1a1a1a',
-  },
-  logoutItem: {
-    marginTop: 10,
-    paddingVertical: 14,
-    alignItems: 'center',
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-  },
-  logoutText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
 });
 
-const skeletonStyles = StyleSheet.create({
+const skeletonStyles = (c: ReturnType<typeof useTheme>['colors']) => StyleSheet.create({
   card: {
-    backgroundColor: '#fff', borderRadius: 16, padding: 16,
+    backgroundColor: c.card, borderRadius: 16, padding: 16,
     flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 0,
     shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
   },
-  icon:        { width: 44, height: 44, borderRadius: 12, backgroundColor: '#e5e7eb' },
-  lineWide:    { height: 14, borderRadius: 6, backgroundColor: '#e5e7eb', width: '70%' },
-  lineNarrow:  { height: 11, borderRadius: 6, backgroundColor: '#e5e7eb', width: '45%' },
-  circle:      { width: 32, height: 32, borderRadius: 16, backgroundColor: '#e5e7eb' },
+  icon:       { width: 44, height: 44, borderRadius: 12, backgroundColor: c.skeleton },
+  lineWide:   { height: 14, borderRadius: 6, backgroundColor: c.skeleton, width: '70%' },
+  lineNarrow: { height: 11, borderRadius: 6, backgroundColor: c.skeleton, width: '45%' },
+  circle:     { width: 32, height: 32, borderRadius: 16, backgroundColor: c.skeleton },
 });

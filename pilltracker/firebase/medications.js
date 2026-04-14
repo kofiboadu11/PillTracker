@@ -106,6 +106,45 @@ export const initializeTodayAdherence = async (medIds) => {
   }
 };
 
+// ─── REFILL TRACKING ────────────────────────────────────────────────────────
+
+// Decrement pillsRemaining by pillsPerDose when a medication is marked taken.
+// Only acts if refill tracking is enabled for that medication.
+export const decrementPillsRemaining = async (medId) => {
+  const uid = getUID();
+  const ref = doc(db, 'users', uid, 'medications', medId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+
+  const data = snap.data();
+  const refill = data.refillTracking;
+  if (!refill?.enabled) return;
+
+  const current = typeof refill.pillsRemaining === 'number' ? refill.pillsRemaining : refill.totalQuantity;
+  const perDose = refill.pillsPerDose ?? 1;
+  const next = Math.max(0, current - perDose);
+
+  await updateDoc(ref, { 'refillTracking.pillsRemaining': next });
+  return next;
+};
+
+// Calculate days of supply remaining from a medication's refill data.
+// Returns { daysRemaining, shouldAlert } or null if tracking is disabled.
+export const getRefillStatus = (med) => {
+  const refill = med?.refillTracking;
+  if (!refill?.enabled) return null;
+
+  const remaining  = typeof refill.pillsRemaining === 'number' ? refill.pillsRemaining : refill.totalQuantity;
+  const perDose    = refill.pillsPerDose ?? 1;
+  const dosesPerDay = med.times?.length ?? 1;
+  const pillsPerDay = perDose * dosesPerDay;
+
+  if (pillsPerDay <= 0) return null;
+
+  const daysRemaining = Math.floor(remaining / pillsPerDay);
+  return { daysRemaining, pillsRemaining: remaining, shouldAlert: daysRemaining <= 7 };
+};
+
 // Get medication history for the past N days, merged with medication names
 export const getMedicationHistory = async (days = 30) => {
   const uid = getUID();

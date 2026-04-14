@@ -1,7 +1,9 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const STORAGE_KEY = '@pilltracker_theme';
+const THEME_KEY = '@pilltracker_theme';
+
+// ─── Color Palettes ───────────────────────────────────────────────────────────
 
 export interface ThemeColors {
   background: string;
@@ -26,85 +28,87 @@ export interface ThemeColors {
 }
 
 const LIGHT: ThemeColors = {
-  background: '#ffffff',
-  surface: '#f5f5f5',
-  card: '#ffffff',
-  text: '#1a1a1a',
-  textSecondary: '#555555',
-  textMuted: '#999999',
-  border: '#e0e0e0',
-  primary: '#1a1a1a',
-  primaryText: '#ffffff',
-  error: '#cc0000',
-  success: '#2e7d32',
-  warning: '#e65100',
-  inputBg: '#fafafa',
-  inputBorder: '#dddddd',
-  skeleton: '#eeeeee',
-  navBg: '#ffffff',
-  chip: '#f0f0f0',
-  chipText: '#333333',
-  overlay: 'rgba(0,0,0,0.45)',
+  background:   '#f9f9f9',
+  surface:      '#ffffff',
+  card:         '#ffffff',
+  text:         '#1a1a1a',
+  textSecondary:'#666666',
+  textMuted:    '#999999',
+  border:       '#dddddd',
+  primary:      '#1a1a1a',
+  primaryText:  '#ffffff',
+  error:        '#ef4444',
+  success:      '#22c55e',
+  warning:      '#f59e0b',
+  inputBg:      '#fafafa',
+  inputBorder:  '#dddddd',
+  skeleton:     '#e5e7eb',
+  navBg:        '#ffffff',
+  chip:         '#fafafa',
+  chipText:     '#555555',
+  overlay:      'rgba(0,0,0,0.35)',
 };
 
 const DARK: ThemeColors = {
-  background: '#121212',
-  surface: '#1e1e1e',
-  card: '#2a2a2a',
-  text: '#f0f0f0',
-  textSecondary: '#bbbbbb',
-  textMuted: '#888888',
-  border: '#3a3a3a',
-  primary: '#f0f0f0',
-  primaryText: '#121212',
-  error: '#ff5252',
-  success: '#69f0ae',
-  warning: '#ffab40',
-  inputBg: '#2a2a2a',
-  inputBorder: '#3a3a3a',
-  skeleton: '#333333',
-  navBg: '#1e1e1e',
-  chip: '#333333',
-  chipText: '#dddddd',
-  overlay: 'rgba(0,0,0,0.65)',
+  background:   '#0f0f0f',
+  surface:      '#1c1c1e',
+  card:         '#2c2c2e',
+  text:         '#f5f5f5',
+  textSecondary:'#a0a0a0',
+  textMuted:    '#666666',
+  border:       '#3a3a3c',
+  primary:      '#f5f5f5',
+  primaryText:  '#0f0f0f',
+  error:        '#ff5b5b',
+  success:      '#34d058',
+  warning:      '#fbbf24',
+  inputBg:      '#2c2c2e',
+  inputBorder:  '#3a3a3c',
+  skeleton:     '#3a3a3c',
+  navBg:        '#1c1c1e',
+  chip:         '#3a3a3c',
+  chipText:     '#d1d1d1',
+  overlay:      'rgba(0,0,0,0.6)',
 };
 
-interface ThemeContextValue {
-  dark: boolean;
+// ─── Context ──────────────────────────────────────────────────────────────────
+
+interface ThemeContextType {
+  isDark: boolean;
   colors: ThemeColors;
   toggleTheme: () => void;
 }
 
-const ThemeContext = createContext<ThemeContextValue>({
-  dark: false,
+const ThemeContext = createContext<ThemeContextType>({
+  isDark: false,
   colors: LIGHT,
   toggleTheme: () => {},
 });
 
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [dark, setDark] = useState(false);
+// ─── Provider ─────────────────────────────────────────────────────────────────
+
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then(val => {
-      if (val === 'dark') setDark(true);
+    AsyncStorage.getItem(THEME_KEY).then(val => {
+      if (val === 'dark') setIsDark(true);
     });
   }, []);
 
-  const toggleTheme = () => {
-    setDark(prev => {
-      const next = !prev;
-      AsyncStorage.setItem(STORAGE_KEY, next ? 'dark' : 'light');
-      return next;
-    });
+  const toggleTheme = async () => {
+    const next = !isDark;
+    setIsDark(next);
+    await AsyncStorage.setItem(THEME_KEY, next ? 'dark' : 'light');
   };
 
   return (
-    <ThemeContext.Provider value={{ dark, colors: dark ? DARK : LIGHT, toggleTheme }}>
+    <ThemeContext.Provider value={{ isDark, colors: isDark ? DARK : LIGHT, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   );
 }
 
-export function useTheme() {
-  return useContext(ThemeContext);
-}
+// ─── Hook ─────────────────────────────────────────────────────────────────────
+
+export const useTheme = () => useContext(ThemeContext);

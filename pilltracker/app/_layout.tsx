@@ -8,7 +8,6 @@ export default function RootLayout() {
   const responseListener = useRef<Notifications.EventSubscription | null>(null);
 
   useEffect(() => {
-    // Listen for user interactions with notifications (e.g. tapping Snooze action)
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
       const { medName, dosage, soundOption, snoozed } = response.notification.request.content.data as {
         medName?: string;
@@ -19,13 +18,11 @@ export default function RootLayout() {
 
       const actionId = response.actionIdentifier;
 
-      // If the user tapped the "snooze" action button and it hasn't already been snoozed
       if (actionId === 'snooze' && medName && dosage && !snoozed) {
         snoozeMedNotification(medName, dosage, soundOption ?? 'default', 5);
       }
     });
 
-    // Register notification categories with a Snooze action button
     Notifications.setNotificationCategoryAsync('medication', [
       {
         identifier: 'snooze',
@@ -51,6 +48,8 @@ export default function RootLayout() {
         <Stack.Screen name="set-reminders" />
         <Stack.Screen name="confirmation" />
         <Stack.Screen name="adherence" />
+        <Stack.Screen name="settings" />
+        <Stack.Screen name="forgot-password" />
       </Stack>
     </ThemeProvider>
   );

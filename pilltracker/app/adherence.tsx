@@ -8,6 +8,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import { getMedicationHistory } from '../firebase/medications';
+import { useTheme } from '../utils/theme';
 
 type FilterMode  = 'all' | 'taken' | 'missed';
 type ViewMode    = 'list' | 'calendar' | 'stats';
@@ -248,6 +249,8 @@ function MonthlyHeatmap({ history }: { history: HistoryDay[] }) {
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function AdherenceScreen() {
+  const { colors } = useTheme();
+
   const [history, setHistory]       = useState<HistoryDay[]>([]);
   const [loading, setLoading]       = useState(true);
   const [search, setSearch]         = useState('');
@@ -451,16 +454,27 @@ export default function AdherenceScreen() {
     );
   };
 
+  // Inline theme overrides for the container/cards
+  const themeOverride = {
+    container: { backgroundColor: colors.background },
+    card:      { backgroundColor: colors.card },
+    text:      { color: colors.text },
+    textMuted: { color: colors.textMuted },
+    input:     { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.inputBorder },
+    filterBg:  { backgroundColor: colors.chip },
+    navText:   { color: colors.text },
+  };
+
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, themeOverride.container]}>
       <ScrollView contentContainerStyle={styles.scroll}>
 
         {/* ── Header ── */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Text style={styles.backText}>← Back</Text>
+            <Text style={[styles.backText, themeOverride.textMuted]}>← Back</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>📋 History</Text>
+          <Text style={[styles.title, themeOverride.text]}>📋 History</Text>
           <TouchableOpacity onPress={handleExport} style={styles.exportBtn}>
             <Text style={{ fontSize: 18 }}>📤</Text>
           </TouchableOpacity>
@@ -528,14 +542,14 @@ export default function AdherenceScreen() {
             CALENDAR VIEW
         ════════════════════════════════════ */}
         {!loading && viewMode === 'calendar' && (
-          <View style={styles.calendarCard}>
+          <View style={[styles.calendarCard, themeOverride.card]}>
 
             {/* Month nav */}
             <View style={styles.calNavRow}>
               <TouchableOpacity onPress={prevMonth} style={styles.calNavBtn}>
                 <Text style={styles.calNavText}>‹</Text>
               </TouchableOpacity>
-              <Text style={styles.calMonthLabel}>{calMonthName}</Text>
+              <Text style={[styles.calMonthLabel, themeOverride.text]}>{calMonthName}</Text>
               <TouchableOpacity onPress={nextMonth} style={styles.calNavBtn}>
                 <Text style={styles.calNavText}>›</Text>
               </TouchableOpacity>
@@ -599,9 +613,9 @@ export default function AdherenceScreen() {
 
         {/* ── Selected day detail (calendar view) ── */}
         {!loading && viewMode === 'calendar' && selectedDate && (
-          <View style={styles.dayBlock}>
+          <View style={[styles.dayBlock, themeOverride.card]}>
             <View style={styles.dayHeader}>
-              <Text style={styles.dayLabel}>{formatDate(selectedDate)}</Text>
+              <Text style={[styles.dayLabel, themeOverride.text]}>{formatDate(selectedDate)}</Text>
               {selectedDayData ? (
                 <View style={[
                   styles.dayBadge,
@@ -618,7 +632,7 @@ export default function AdherenceScreen() {
               <View key={`${entry.medId}-${i}`} style={styles.entryRow}>
                 <View style={[styles.statusDot, entry.taken ? styles.dotGreen : styles.dotRed]} />
                 <View style={styles.entryInfo}>
-                  <Text style={styles.entryName}>{entry.name}</Text>
+                  <Text style={[styles.entryName, themeOverride.text]}>{entry.name}</Text>
                   {entry.dosage ? <Text style={styles.entryDosage}>{entry.dosage}</Text> : null}
                 </View>
                 <Text style={entry.taken ? styles.takenLabel : styles.missedLabel}>
@@ -798,11 +812,11 @@ export default function AdherenceScreen() {
         {!loading && viewMode === 'list' && (
           <>
             {/* Search bar */}
-            <View style={styles.searchRow}>
+            <View style={[styles.searchRow, themeOverride.card]}>
               <TextInput
-                style={styles.searchInput}
+                style={[styles.searchInput, themeOverride.text]}
                 placeholder="Search medication..."
-                placeholderTextColor="#aaa"
+                placeholderTextColor={colors.textMuted}
                 value={search}
                 onChangeText={setSearch}
                 clearButtonMode="while-editing"
@@ -851,9 +865,9 @@ export default function AdherenceScreen() {
               const allTaken  = dayTaken === dayTotal;
               const noneTaken = dayTaken === 0;
               return (
-                <View key={day.date} style={styles.dayBlock}>
+                <View key={day.date} style={[styles.dayBlock, themeOverride.card]}>
                   <View style={styles.dayHeader}>
-                    <Text style={styles.dayLabel}>{formatDate(day.date)}</Text>
+                    <Text style={[styles.dayLabel, themeOverride.text]}>{formatDate(day.date)}</Text>
                     <View style={[
                       styles.dayBadge,
                       allTaken ? styles.badgeGreen : noneTaken ? styles.badgeRed : styles.badgeYellow
@@ -865,7 +879,7 @@ export default function AdherenceScreen() {
                     <View key={`${entry.medId}-${i}`} style={styles.entryRow}>
                       <View style={[styles.statusDot, entry.taken ? styles.dotGreen : styles.dotRed]} />
                       <View style={styles.entryInfo}>
-                        <Text style={styles.entryName}>{entry.name}</Text>
+                        <Text style={[styles.entryName, themeOverride.text]}>{entry.name}</Text>
                         {entry.dosage ? <Text style={styles.entryDosage}>{entry.dosage}</Text> : null}
                       </View>
                       <Text style={entry.taken ? styles.takenLabel : styles.missedLabel}>

@@ -88,7 +88,6 @@ export default function ForgotPasswordScreen() {
                 onChangeText={setEmail}
                 keyboardType="email-address"
                 autoCapitalize="none"
-                autoFocus
               />
 
               <TouchableOpacity

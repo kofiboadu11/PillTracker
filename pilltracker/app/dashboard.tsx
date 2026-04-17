@@ -16,8 +16,9 @@ import {
 import { cancelMedNotifications } from '../utils/notifications';
 import { useTheme } from '../utils/theme';
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.35;
+const SCREEN_WIDTH   = Dimensions.get('window').width;
+const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.4;  // full-swipe auto-delete
+const DELETE_WIDTH    = 80;                   // revealed delete button width
 
 // ─── Skeleton Pulse ───────────────────────────────────────────────────────────
 function SkeletonPulse({ style }: { style: any }) {
@@ -75,24 +76,43 @@ function SwipeableMedCard({
   const translateX = useRef(new Animated.Value(0)).current;
   const slideIn    = useRef(new Animated.Value(30)).current;
   const fadeIn     = useRef(new Animated.Value(0)).current;
+  // Always-fresh ref so PanResponder never holds a stale onDelete closure
+  const onDeleteRef = useRef(onDelete);
+  useEffect(() => { onDeleteRef.current = onDelete; });
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(fadeIn,  { toValue: 1, duration: 350, useNativeDriver: true }),
-      Animated.timing(slideIn, { toValue: 0, duration: 350, useNativeDriver: true }),
+      Animated.timing(fadeIn,  { toValue: 1, duration: 300, useNativeDriver: true }),
+      Animated.timing(slideIn, { toValue: 0, duration: 300, useNativeDriver: true }),
     ]).start();
   }, []);
 
+  const snapOpen  = () =>
+    Animated.spring(translateX, { toValue: -DELETE_WIDTH, useNativeDriver: true, speed: 20, bounciness: 4 }).start();
+  const snapClose = () =>
+    Animated.spring(translateX, { toValue: 0, useNativeDriver: true, speed: 20, bounciness: 4 }).start();
+  const snapDelete = () =>
+    Animated.timing(translateX, { toValue: -SCREEN_WIDTH, duration: 200, useNativeDriver: true })
+      .start(() => onDeleteRef.current());
+
   const panResponder = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 8 && Math.abs(g.dy) < 20,
-      onPanResponderMove: (_, g) => { if (g.dx < 0) translateX.setValue(g.dx); },
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder:  (_, g) => Math.abs(g.dx) > 6 && Math.abs(g.dy) < 15,
+      onPanResponderMove: (_, g) => {
+        const x = g.dx;
+        if (x < 0) translateX.setValue(Math.max(x, -SCREEN_WIDTH));
+      },
       onPanResponderRelease: (_, g) => {
         if (g.dx < -SWIPE_THRESHOLD) {
-          Animated.timing(translateX, { toValue: -SCREEN_WIDTH, duration: 250, useNativeDriver: true })
-            .start(() => onDelete());
+          // Full swipe — delete immediately
+          snapDelete();
+        } else if (g.dx < -(DELETE_WIDTH / 2)) {
+          // Partial swipe — snap open to reveal button
+          snapOpen();
         } else {
-          Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
+          // Not far enough — snap back
+          snapClose();
         }
       },
     })
@@ -104,9 +124,16 @@ function SwipeableMedCard({
 
   return (
     <View style={{ overflow: 'hidden', borderRadius: 16, marginBottom: 0 }}>
-      <View style={s.deleteHint}>
-        <Text style={s.deleteHintText}>🗑️  Delete</Text>
-      </View>
+      {/* Delete button — revealed when swiped left */}
+      <TouchableOpacity
+        style={s.deleteHint}
+        onPress={() => snapDelete()}
+        activeOpacity={0.8}
+      >
+        <Text style={s.deleteHintIcon}>🗑️</Text>
+        <Text style={s.deleteHintText}>Delete</Text>
+      </TouchableOpacity>
+
       <Animated.View
         style={{ transform: [{ translateX }], opacity: fadeIn, translateY: slideIn }}
         {...panResponder.panHandlers}

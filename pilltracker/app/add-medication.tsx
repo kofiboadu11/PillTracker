@@ -223,7 +223,17 @@ export default function AddMedicationScreen() {
         keyboardShouldPersistTaps="handled"
         style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}
       >
-        <Text style={s.title}>+ Add Medication</Text>
+        {/* ── Header ── */}
+        <View style={s.header}>
+          <TouchableOpacity onPress={() => router.back()} style={s.backButton}>
+            <Text style={s.backText}>← Back</Text>
+          </TouchableOpacity>
+          <View style={s.titleRow}>
+            <Text style={s.titleIcon}>💊</Text>
+            <Text style={s.title}>Add Medication</Text>
+          </View>
+          <Text style={s.subtitle}>Enter your medication details below</Text>
+        </View>
 
         {/* ── Photo picker ── */}
         <Text style={s.label}>Pill Photo (optional)</Text>
@@ -340,9 +350,18 @@ export default function AddMedicationScreen() {
 
 const makeStyles = (c: ReturnType<typeof useTheme>['colors']) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background },
-  scroll:    { padding: 24, gap: 12 },
-  title:     { fontSize: 26, fontWeight: 'bold', color: c.text, marginBottom: 8 },
-  label:     { fontSize: 14, fontWeight: '600', color: c.text, marginBottom: 6 },
+  scroll:    { padding: 24, gap: 12, paddingBottom: 40 },
+
+  // Header
+  header:    { marginBottom: 8 },
+  backButton:{ paddingVertical: 4, paddingHorizontal: 0, alignSelf: 'flex-start', marginBottom: 16 },
+  backText:  { fontSize: 16, color: c.textSecondary, fontWeight: '500' },
+  titleRow:  { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 },
+  titleIcon: { fontSize: 28 },
+  title:     { fontSize: 28, fontWeight: '800', color: c.text, letterSpacing: -0.5 },
+  subtitle:  { fontSize: 14, color: c.textMuted, marginTop: 2, marginBottom: 4 },
+
+  label:     { fontSize: 13, fontWeight: '700', color: c.text, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
 
   photoRow:        { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 4 },
   photoBox:        { width: 100, height: 100, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: c.border, borderStyle: 'dashed' },

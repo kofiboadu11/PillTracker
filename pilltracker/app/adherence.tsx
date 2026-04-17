@@ -471,14 +471,17 @@ export default function AdherenceScreen() {
 
         {/* ── Header ── */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Text style={[styles.backText, themeOverride.textMuted]}>← Back</Text>
-          </TouchableOpacity>
-          <Text style={[styles.title, themeOverride.text]}>📋 History</Text>
-          <TouchableOpacity onPress={handleExport} style={styles.exportBtn}>
-            <Text style={{ fontSize: 18 }}>📤</Text>
-          </TouchableOpacity>
-          {/* View toggle */}
+          {/* Row 1: back + title + export */}
+          <View style={styles.headerTop}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+              <Text style={[styles.backText, themeOverride.textMuted]}>← Back</Text>
+            </TouchableOpacity>
+            <Text style={[styles.title, themeOverride.text]}>📋 History</Text>
+            <TouchableOpacity onPress={handleExport} style={styles.exportBtn}>
+              <Text style={{ fontSize: 20 }}>📤</Text>
+            </TouchableOpacity>
+          </View>
+          {/* Row 2: view toggles */}
           <View style={styles.viewToggle}>
             <TouchableOpacity
               style={[styles.toggleBtn, viewMode === 'list' && styles.toggleBtnActive]}
@@ -902,11 +905,15 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f7f7f7' },
   scroll: { padding: 20, paddingBottom: 40, gap: 16 },
 
-  header: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 4 },
-  backBtn: { padding: 4 },
+  header: { flexDirection: 'column', gap: 10, marginBottom: 8 },
+  headerTop: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  backBtn: { padding: 4, minWidth: 60 },
   backText: { fontSize: 15, color: '#555' },
-  title: { fontSize: 24, fontWeight: '700', color: '#1a1a1a' },
-  exportBtn: { padding: 4, marginLeft: 8 },
+  title: { fontSize: 22, fontWeight: '800', color: '#1a1a1a', textAlign: 'center', flex: 1 },
+  exportBtn: { padding: 4, minWidth: 60, alignItems: 'flex-end' },
 
   summaryCard: {
     backgroundColor: '#1a1a1a', borderRadius: 16, padding: 20, gap: 14,
@@ -962,14 +969,18 @@ const styles = StyleSheet.create({
   filterPillText: { fontSize: 13, fontWeight: '600', color: '#666' },
   filterPillTextActive: { color: '#fff' },
 
-  // View toggle (List / Calendar)
+  // View toggle (List / Cal / Stats)
   viewToggle: {
-    flexDirection: 'row', marginLeft: 'auto',
-    backgroundColor: '#f0f0f0', borderRadius: 10, padding: 2,
+    flexDirection: 'row',
+    backgroundColor: '#f0f0f0', borderRadius: 12, padding: 3,
+    alignSelf: 'stretch',
   },
-  toggleBtn: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
+  toggleBtn: {
+    flex: 1, paddingVertical: 8, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+  },
   toggleBtnActive: { backgroundColor: '#1a1a1a' },
-  toggleBtnText: { fontSize: 12, fontWeight: '600', color: '#666' },
+  toggleBtnText: { fontSize: 13, fontWeight: '600', color: '#666' },
   toggleBtnTextActive: { color: '#fff' },
 
   // Calendar card

@@ -71,9 +71,9 @@ function useNextDose(times: string[]): { label: string; minutesLeft: number } | 
 }
 
 /** Badge shown on the card — green when >1h away, amber <1h, red when due */
-function CountdownBadge({ times, taken }: { times: string[]; taken: boolean | undefined }) {
+function CountdownBadge({ times }: { times: string[] }) {
   const next = useNextDose(times);
-  if (!next || taken === true) return null; // hide once the dose is marked taken
+  if (!next) return null;
 
   const color = next.minutesLeft <= 0   ? '#ef4444'
               : next.minutesLeft <= 60  ? '#f59e0b'
@@ -270,7 +270,7 @@ function SwipeableMedCard({
               {med.dosage}
               {allTimes.length > 0 ? ' · ' + allTimes.join(' · ') : ''}
             </Text>
-            <CountdownBadge times={allTimes} taken={taken} />
+            <CountdownBadge times={allTimes} />
             {refillStatus?.shouldAlert && (
               <RefillBadge daysRemaining={refillStatus.daysRemaining} />
             )}

@@ -79,15 +79,27 @@ export const getWeeklyAdherence = async () => {
 };
 
 
-export const toggleMedication = async (medId, value) => {
+// Toggle a single dose by index.
+// takenDoses is stored as boolean[] — one entry per time slot.
+export const toggleMedication = async (medId, doseIndex, value, totalDoses = 1) => {
   const uid = getUID();
   const today = new Date().toISOString().split('T')[0];
   const ref = doc(db, 'users', uid, 'adherence', today);
-  await setDoc(ref, { [medId]: value }, { merge: true });
+  const snap = await getDoc(ref);
+  const existing = snap.exists() ? snap.data() : {};
+
+  // Normalise: old boolean format → single-element array
+  let arr = Array.isArray(existing[medId])
+    ? [...existing[medId]]
+    : new Array(totalDoses).fill(false);
+
+  while (arr.length < totalDoses) arr.push(false);
+  arr[doseIndex] = value;
+  await setDoc(ref, { [medId]: arr }, { merge: true });
 };
 
-// Write false for any med that has no entry for today yet (so history shows "Missed")
-export const initializeTodayAdherence = async (medIds) => {
+// Initialise today's adherence for every med as [false, false, …] (one per dose)
+export const initializeTodayAdherence = async (meds) => {
   const uid = getUID();
   const today = new Date().toISOString().split('T')[0];
   const ref = doc(db, 'users', uid, 'adherence', today);
@@ -95,9 +107,10 @@ export const initializeTodayAdherence = async (medIds) => {
   const existing = snap.exists() ? snap.data() : {};
 
   const updates = {};
-  for (const id of medIds) {
-    if (!(id in existing)) {
-      updates[id] = false; // default to missed until marked taken
+  for (const med of meds) {
+    if (!(med.id in existing)) {
+      const count = Array.isArray(med.times) && med.times.length > 0 ? med.times.length : 1;
+      updates[med.id] = new Array(count).fill(false);
     }
   }
 

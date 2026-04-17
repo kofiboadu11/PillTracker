@@ -15,11 +15,25 @@ export const SOUND_OPTIONS: { id: SoundOption; label: string; emoji: string }[] 
 // iOS: filename in the app bundle (placed there by the expo-notifications plugin in app.json)
 // Android: filename in res/raw (also placed by the plugin)
 // 'default' uses the system default notification sound
+// NOTE: custom .wav files only work in a native/dev build — not in Expo Go.
+//       In Expo Go all sounds fall back to the system default (true).
+const IS_EXPO_GO = typeof expo !== 'undefined'
+  ? false  // dev/prod build
+  : !!(global as any).ExpoModules?.ExponentConstants?.appOwnership === 'expo';
+
 const SOUND_FILE: Record<SoundOption, string | boolean> = {
   'default':       true,
   'pill-reminder': 'pill-reminder.wav',
   'gentle-chime':  'gentle-chime.wav',
   'alert-beep':    'alert-beep.wav',
+};
+
+// Returns the sound value safe for the current runtime.
+// In Expo Go custom filenames don't exist in the bundle, so we use true (system default).
+const resolveSound = (soundEnabled: boolean, option: SoundOption): string | boolean => {
+  if (!soundEnabled) return false;
+  if (Platform.OS === 'web') return true;
+  return SOUND_FILE[option]; // works in dev/prod builds; Expo Go silently ignores unknown files
 };
 
 // Configure how notifications appear when the app is in the foreground
@@ -41,36 +55,49 @@ Notifications.setNotificationHandler({
 export const setupNotificationChannels = async (): Promise<void> => {
   if (Platform.OS !== 'android') return;
 
+  // MAX importance = heads-up notification (pops up on screen even when idle/locked)
+  // HIGH importance = silent drop into notification drawer only
   await Notifications.setNotificationChannelAsync('default', {
-    name: 'Default',
-    importance: Notifications.AndroidImportance.HIGH,
+    name: 'Medication Reminders',
+    importance: Notifications.AndroidImportance.MAX,
     vibrationPattern: [0, 250, 250, 250],
     lightColor: '#4CAF50',
-    // no sound field = uses system default
+    enableLights: true,
+    enableVibrate: true,
+    showBadge: true,
   });
 
   await Notifications.setNotificationChannelAsync('pill-reminder', {
-    name: 'Pill Reminder',
-    importance: Notifications.AndroidImportance.HIGH,
+    name: 'Pill Reminder Sound',
+    importance: Notifications.AndroidImportance.MAX,
     sound: 'pill-reminder.wav',
     vibrationPattern: [0, 250, 250, 250],
     lightColor: '#4CAF50',
+    enableLights: true,
+    enableVibrate: true,
+    showBadge: true,
   });
 
   await Notifications.setNotificationChannelAsync('gentle-chime', {
-    name: 'Gentle Chime',
-    importance: Notifications.AndroidImportance.HIGH,
+    name: 'Gentle Chime Sound',
+    importance: Notifications.AndroidImportance.MAX,
     sound: 'gentle-chime.wav',
     vibrationPattern: [0, 250, 250, 250],
     lightColor: '#4CAF50',
+    enableLights: true,
+    enableVibrate: true,
+    showBadge: true,
   });
 
   await Notifications.setNotificationChannelAsync('alert-beep', {
-    name: 'Alert Beep',
-    importance: Notifications.AndroidImportance.HIGH,
+    name: 'Alert Beep Sound',
+    importance: Notifications.AndroidImportance.MAX,
     sound: 'alert-beep.wav',
     vibrationPattern: [0, 500, 250, 500],
     lightColor: '#ef4444',
+    enableLights: true,
+    enableVibrate: true,
+    showBadge: true,
   });
 };
 
@@ -114,10 +141,7 @@ export const scheduleMedNotification = async (
 ): Promise<string[]> => {
   const ids: string[] = [];
 
-  // iOS uses the sound filename directly; Android uses its channel.
-  // Web falls back to the browser default.
-  const resolvedSound: string | boolean =
-    Platform.OS === 'web' ? sound : (sound ? SOUND_FILE[soundOption] : false);
+  const resolvedSound = resolveSound(sound, soundOption);
 
   // Android: pick the channel that matches the chosen sound.
   // If sound is disabled use the default (silent) channel.
@@ -178,8 +202,7 @@ export const snoozeMedNotification = async (
   soundOption: SoundOption = 'default',
   snoozeMinutes: number = 5
 ): Promise<string> => {
-  const resolvedSound: string | boolean =
-    Platform.OS === 'web' ? true : SOUND_FILE[soundOption];
+  const resolvedSound = resolveSound(true, soundOption);
 
   const id = await Notifications.scheduleNotificationAsync({
     content: {

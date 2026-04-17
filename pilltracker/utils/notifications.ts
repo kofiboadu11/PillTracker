@@ -12,8 +12,9 @@ export const SOUND_OPTIONS: { id: SoundOption; label: string; emoji: string }[] 
   { id: 'alert-beep',    label: 'Alert Beep',      emoji: '📢' },
 ];
 
-// Maps sound IDs to the filename used by expo-notifications
-// On iOS/Android the file must be in the app bundle; on web sound: true uses browser default
+// iOS: filename in the app bundle (placed there by the expo-notifications plugin in app.json)
+// Android: filename in res/raw (also placed by the plugin)
+// 'default' uses the system default notification sound
 const SOUND_FILE: Record<SoundOption, string | boolean> = {
   'default':       true,
   'pill-reminder': 'pill-reminder.wav',
@@ -32,11 +33,51 @@ Notifications.setNotificationHandler({
   }),
 });
 
+// ─── ANDROID CHANNELS ───────────────────────────────────────
+// Android 8+ (API 26+) requires a notification channel to play custom sounds.
+// Each sound option gets its own channel so the sound is respected.
+// Must be called once at app startup (see _layout.tsx).
+
+export const setupNotificationChannels = async (): Promise<void> => {
+  if (Platform.OS !== 'android') return;
+
+  await Notifications.setNotificationChannelAsync('default', {
+    name: 'Default',
+    importance: Notifications.AndroidImportance.HIGH,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: '#4CAF50',
+    // no sound field = uses system default
+  });
+
+  await Notifications.setNotificationChannelAsync('pill-reminder', {
+    name: 'Pill Reminder',
+    importance: Notifications.AndroidImportance.HIGH,
+    sound: 'pill-reminder.wav',
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: '#4CAF50',
+  });
+
+  await Notifications.setNotificationChannelAsync('gentle-chime', {
+    name: 'Gentle Chime',
+    importance: Notifications.AndroidImportance.HIGH,
+    sound: 'gentle-chime.wav',
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: '#4CAF50',
+  });
+
+  await Notifications.setNotificationChannelAsync('alert-beep', {
+    name: 'Alert Beep',
+    importance: Notifications.AndroidImportance.HIGH,
+    sound: 'alert-beep.wav',
+    vibrationPattern: [0, 500, 250, 500],
+    lightColor: '#ef4444',
+  });
+};
+
 // ─── PERMISSIONS ────────────────────────────────────────────
 
 export const requestNotificationPermissions = async (): Promise<boolean> => {
   if (Platform.OS === 'web') {
-    // Web notifications use the browser Notification API
     if (!('Notification' in window)) return false;
     const permission = await Notification.requestPermission();
     return permission === 'granted';
@@ -51,7 +92,6 @@ export const requestNotificationPermissions = async (): Promise<boolean> => {
 
 // ─── SCHEDULING ─────────────────────────────────────────────
 
-// Parse a time string like "8:00 AM" or "8:00 PM" into { hour, minute }
 const parseTime = (timeStr: string): { hour: number; minute: number } => {
   const [timePart, period] = timeStr.split(' ');
   let [hour, minute] = timePart.split(':').map(Number);
@@ -74,9 +114,14 @@ export const scheduleMedNotification = async (
 ): Promise<string[]> => {
   const ids: string[] = [];
 
-  // On web, expo-notifications doesn't support custom sound files
+  // iOS uses the sound filename directly; Android uses its channel.
+  // Web falls back to the browser default.
   const resolvedSound: string | boolean =
     Platform.OS === 'web' ? sound : (sound ? SOUND_FILE[soundOption] : false);
+
+  // Android: pick the channel that matches the chosen sound.
+  // If sound is disabled use the default (silent) channel.
+  const channelId: string = sound ? soundOption : 'default';
 
   for (const timeStr of times) {
     const { hour, minute } = parseTime(timeStr);
@@ -88,7 +133,6 @@ export const scheduleMedNotification = async (
       data: { medName, dosage, soundOption },
     };
 
-    // Only attach category (snooze button) if snooze is enabled
     if (snoozeEnabled) {
       content.categoryIdentifier = 'medication';
     }
@@ -99,6 +143,7 @@ export const scheduleMedNotification = async (
         type: Notifications.SchedulableTriggerInputTypes.DAILY,
         hour,
         minute,
+        ...(Platform.OS === 'android' && { channelId }),
       },
     });
 
@@ -126,8 +171,6 @@ export const cancelAllNotifications = async (): Promise<void> => {
 
 /**
  * Snooze a medication notification by 5 minutes.
- * Schedules a one-time notification 5 minutes from now.
- * Returns the new notification ID.
  */
 export const snoozeMedNotification = async (
   medName: string,
@@ -148,6 +191,7 @@ export const snoozeMedNotification = async (
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
       seconds: snoozeMinutes * 60,
+      ...(Platform.OS === 'android' && { channelId: soundOption }),
     },
   });
 

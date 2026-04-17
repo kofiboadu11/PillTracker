@@ -1,4 +1,4 @@
-import { db, auth } from './config';
+import { db, auth, storage } from './config';
 import {
   collection,
   addDoc,
@@ -9,9 +9,23 @@ import {
   setDoc,
   getDoc
 } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 // Get the current user's ID
 const getUID = () => auth.currentUser?.uid;
+
+// ─── PHOTO UPLOAD ────────────────────────────────────────────
+
+// Upload a local photo URI to Firebase Storage and return the remote download URL.
+// Path: users/{uid}/meds/{medId}.jpg
+export const uploadMedPhoto = async (localUri, medId) => {
+  const uid = getUID();
+  const response = await fetch(localUri);
+  const blob = await response.blob();
+  const storageRef = ref(storage, `users/${uid}/meds/${medId}.jpg`);
+  await uploadBytes(storageRef, blob);
+  return await getDownloadURL(storageRef);
+};
 
 // ─── MEDICATIONS ────────────────────────────────────────────
 
@@ -79,15 +93,27 @@ export const getWeeklyAdherence = async () => {
 };
 
 
-export const toggleMedication = async (medId, value) => {
+// Toggle a single dose by index.
+// takenDoses is stored as boolean[] — one entry per time slot.
+export const toggleMedication = async (medId, doseIndex, value, totalDoses = 1) => {
   const uid = getUID();
   const today = new Date().toISOString().split('T')[0];
   const ref = doc(db, 'users', uid, 'adherence', today);
-  await setDoc(ref, { [medId]: value }, { merge: true });
+  const snap = await getDoc(ref);
+  const existing = snap.exists() ? snap.data() : {};
+
+  // Normalise: old boolean format → single-element array
+  let arr = Array.isArray(existing[medId])
+    ? [...existing[medId]]
+    : new Array(totalDoses).fill(false);
+
+  while (arr.length < totalDoses) arr.push(false);
+  arr[doseIndex] = value;
+  await setDoc(ref, { [medId]: arr }, { merge: true });
 };
 
-// Write false for any med that has no entry for today yet (so history shows "Missed")
-export const initializeTodayAdherence = async (medIds) => {
+// Initialise today's adherence for every med as [false, false, …] (one per dose)
+export const initializeTodayAdherence = async (meds) => {
   const uid = getUID();
   const today = new Date().toISOString().split('T')[0];
   const ref = doc(db, 'users', uid, 'adherence', today);
@@ -95,9 +121,10 @@ export const initializeTodayAdherence = async (medIds) => {
   const existing = snap.exists() ? snap.data() : {};
 
   const updates = {};
-  for (const id of medIds) {
-    if (!(id in existing)) {
-      updates[id] = false; // default to missed until marked taken
+  for (const med of meds) {
+    if (!(med.id in existing)) {
+      const count = Array.isArray(med.times) && med.times.length > 0 ? med.times.length : 1;
+      updates[med.id] = new Array(count).fill(false);
     }
   }
 
@@ -166,13 +193,23 @@ export const getMedicationHistory = async (days = 30) => {
     const adherenceSnap = await getDoc(adherenceRef);
     const adherenceData = adherenceSnap.exists() ? adherenceSnap.data() : {};
 
-    // Only include days that have at least one entry
-    const entries = Object.entries(adherenceData).map(([medId, taken]) => ({
-      medId,
-      name: medMap[medId]?.name ?? 'Deleted medication',
-      dosage: medMap[medId]?.dosage ?? '',
-      taken: Boolean(taken),
-    }));
+    const entries = [];
+    for (const [medId, takenData] of Object.entries(adherenceData)) {
+      const med = medMap[medId];
+      if (!med) continue; // deleted medication — skip entirely
+
+      // adherence stores boolean[] (per-dose) or legacy boolean
+      const takenArr = Array.isArray(takenData) ? takenData : [Boolean(takenData)];
+      const multiDose = takenArr.length > 1;
+      takenArr.forEach((t, i) => {
+        entries.push({
+          medId,
+          name: multiDose ? `${med.name} · ${i + 1}/${takenArr.length}` : med.name,
+          dosage: med.dosage ?? '',
+          taken: Boolean(t),
+        });
+      });
+    }
 
     if (entries.length > 0) {
       results.push({ date: dateStr, entries });

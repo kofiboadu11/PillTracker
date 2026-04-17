@@ -28,6 +28,16 @@
     "plugins": [
       "expo-router",
       [
+        "expo-notifications",
+        {
+          "sounds": [
+            "./assets/sounds/pill-reminder.wav",
+            "./assets/sounds/gentle-chime.wav",
+            "./assets/sounds/alert-beep.wav"
+          ]
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",

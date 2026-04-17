@@ -31,7 +31,7 @@ jest.mock('../../firebase/medications', () => ({
   deleteMedication:         jest.fn(() => Promise.resolve()),
   toggleMedication:         jest.fn(() => Promise.resolve()),
   initializeTodayAdherence: jest.fn(() => Promise.resolve()),
-  getAdherenceForDate:      jest.fn(() => Promise.resolve({ med1: false })),
+  getAdherenceForDate:      jest.fn(() => Promise.resolve({ med1: [false] })),
   decrementPillsRemaining:  jest.fn(() => Promise.resolve(25)),
   getRefillStatus:          jest.fn(() => null),
 }));

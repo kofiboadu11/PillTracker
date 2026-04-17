@@ -1,13 +1,16 @@
 import { useEffect, useRef } from 'react';
 import { Stack } from 'expo-router';
 import * as Notifications from 'expo-notifications';
-import { snoozeMedNotification, type SoundOption } from '../utils/notifications';
+import { snoozeMedNotification, setupNotificationChannels, type SoundOption } from '../utils/notifications';
 import { ThemeProvider } from '../utils/theme';
 
 export default function RootLayout() {
   const responseListener = useRef<Notifications.EventSubscription | null>(null);
 
   useEffect(() => {
+    // Set up Android notification channels with custom sounds on first launch
+    setupNotificationChannels();
+
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
       const { medName, dosage, soundOption, snoozed } = response.notification.request.content.data as {
         medName?: string;

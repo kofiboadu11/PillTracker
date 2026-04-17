@@ -4,6 +4,13 @@
 jest.mock('../../firebase/config', () => ({
   auth: { currentUser: { uid: 'test-uid' } },
   db: {},
+  storage: {},
+}));
+
+jest.mock('firebase/storage', () => ({
+  ref:             jest.fn(() => 'mock-storage-ref'),
+  uploadBytes:     jest.fn(() => Promise.resolve()),
+  getDownloadURL:  jest.fn(() => Promise.resolve('https://storage.example.com/photo.jpg')),
 }));
 
 jest.mock('firebase/firestore', () => ({

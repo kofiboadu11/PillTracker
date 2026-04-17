@@ -4,7 +4,7 @@ import {
   SafeAreaView, ScrollView, Alert, Modal, TextInput,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { addMedication } from '../firebase/medications';
+import { addMedication, updateMedication, uploadMedPhoto } from '../firebase/medications';
 import {
   requestNotificationPermissions, scheduleMedNotification,
   SOUND_OPTIONS, type SoundOption,
@@ -145,15 +145,26 @@ export default function SetRemindersScreen() {
           }
         : { enabled: false };
 
-      await addMedication({
+      const localUri = String(photoUri ?? '');
+      const medId = await addMedication({
         name, dosage, form, frequency, notes,
-        photoUri: photoUri ?? '',
+        photoUri: localUri,
         times,
         reminders: { pushNotifications, soundAlert, selectedSound, snooze },
         refillTracking,
         notificationIds,
         createdAt: new Date().toISOString(),
       });
+
+      // Upload photo to Firebase Storage if it's a local file URI
+      if (localUri.startsWith('file://')) {
+        try {
+          const remoteUrl = await uploadMedPhoto(localUri, medId);
+          await updateMedication(medId, { photoUri: remoteUrl });
+        } catch {
+          // Non-fatal — medication saved, photo stays local
+        }
+      }
 
       router.push({ pathname: '/confirmation' as any, params: { name, dosage, times: times.join(', ') } });
     } catch {

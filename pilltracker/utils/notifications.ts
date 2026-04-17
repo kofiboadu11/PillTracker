@@ -99,6 +99,16 @@ export const setupNotificationChannels = async (): Promise<void> => {
     enableVibrate: true,
     showBadge: true,
   });
+
+  await Notifications.setNotificationChannelAsync('refill-reminder', {
+    name: 'Refill Reminders',
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0, 400, 200, 400],
+    lightColor: '#f59e0b',
+    enableLights: true,
+    enableVibrate: true,
+    showBadge: true,
+  });
 };
 
 // ─── PERMISSIONS ────────────────────────────────────────────
@@ -191,6 +201,34 @@ export const cancelMedNotifications = async (notificationIds: string[]): Promise
  */
 export const cancelAllNotifications = async (): Promise<void> => {
   await Notifications.cancelAllScheduledNotificationsAsync();
+};
+
+/**
+ * Fire an immediate push notification warning the user their supply is low.
+ * Appears in the notification tray even when the app is backgrounded.
+ */
+export const scheduleRefillNotification = async (
+  medName: string,
+  daysRemaining: number,
+  pillsRemaining: number
+): Promise<void> => {
+  const body = daysRemaining === 0
+    ? `You're out of ${medName}. Please refill now!`
+    : `${medName} has ~${daysRemaining} day${daysRemaining !== 1 ? 's' : ''} left (${pillsRemaining} pill${pillsRemaining !== 1 ? 's' : ''}). Time to refill.`;
+
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: '💊 Refill Reminder',
+      body,
+      sound: true,
+      data: { type: 'refill', medName },
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: 2,
+      ...(Platform.OS === 'android' && { channelId: 'refill-reminder' }),
+    },
+  });
 };
 
 /**

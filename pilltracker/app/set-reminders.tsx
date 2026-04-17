@@ -168,10 +168,14 @@ export default function SetRemindersScreen() {
       <ScrollView contentContainerStyle={s.scroll}>
         <Text style={s.title}>🔔 Set Reminders</Text>
 
-        <View style={s.medCard}>
-          <Text style={s.medName}>{name} — {dosage}</Text>
-          <Text style={s.medFreq}>{frequency}</Text>
-        </View>
+        {(name || dosage) ? (
+          <View style={s.medCard}>
+            <Text style={s.medName}>
+              {[name, dosage].filter(Boolean).join(' — ')}
+            </Text>
+            {frequency ? <Text style={s.medFreq}>{frequency}</Text> : null}
+          </View>
+        ) : null}
 
         {/* ── Time Slots ── */}
         <Text style={s.sectionTitle}>Reminder Times</Text>

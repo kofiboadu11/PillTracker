@@ -51,6 +51,8 @@ const {
   initializeTodayAdherence,
   decrementPillsRemaining,
   getRefillStatus,
+  uploadMedPhoto,
+  getMedicationHistory,
 } = require('../../firebase/medications');
 
 beforeEach(() => jest.clearAllMocks());
@@ -319,5 +321,110 @@ describe('getRefillStatus', () => {
       refillTracking: { enabled: true, totalQuantity: 20, pillsPerDose: 1 },
     };
     expect(getRefillStatus(med).daysRemaining).toBe(20);
+  });
+});
+
+// ─── uploadMedPhoto ───────────────────────────────────────────────────────────
+
+describe('uploadMedPhoto', () => {
+  const { ref, uploadBytes, getDownloadURL } = require('firebase/storage');
+
+  beforeEach(() => {
+    global.fetch = jest.fn(() =>
+      Promise.resolve({ blob: () => Promise.resolve('mock-blob') })
+    );
+  });
+
+  afterEach(() => {
+    delete global.fetch;
+  });
+
+  it('fetches the local URI, uploads the blob, and returns the download URL', async () => {
+    const url = await uploadMedPhoto('file://local/photo.jpg', 'med123');
+    expect(fetch).toHaveBeenCalledWith('file://local/photo.jpg');
+    expect(uploadBytes).toHaveBeenCalledWith('mock-storage-ref', 'mock-blob');
+    expect(getDownloadURL).toHaveBeenCalledWith('mock-storage-ref');
+    expect(url).toBe('https://storage.example.com/photo.jpg');
+  });
+
+  it('builds the correct storage path for the user and med', async () => {
+    await uploadMedPhoto('file://local/img.jpg', 'med-xyz');
+    expect(ref).toHaveBeenCalledWith({}, 'users/test-uid/meds/med-xyz.jpg');
+  });
+});
+
+// ─── getMedicationHistory ─────────────────────────────────────────────────────
+
+describe('getMedicationHistory', () => {
+  it('returns entries for dates with adherence data', async () => {
+    getDocs.mockResolvedValueOnce({
+      docs: [
+        { id: 'med1', data: () => ({ name: 'Aspirin', dosage: '100mg' }) },
+      ],
+    });
+    getDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ med1: [true] }),
+    });
+    // Remaining days return empty
+    getDoc.mockResolvedValue({ exists: () => false, data: () => ({}) });
+
+    const history = await getMedicationHistory(1);
+    expect(history).toHaveLength(1);
+    expect(history[0].entries[0]).toMatchObject({ name: 'Aspirin', taken: true });
+  });
+
+  it('skips deleted medications (no entry in medMap)', async () => {
+    getDocs.mockResolvedValueOnce({ docs: [] }); // no meds
+    getDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ ghost_med: [true] }), // adherence for a deleted med
+    });
+    getDoc.mockResolvedValue({ exists: () => false, data: () => ({}) });
+
+    const history = await getMedicationHistory(1);
+    expect(history).toHaveLength(0);
+  });
+
+  it('expands boolean[] into per-dose entries with labels for multi-dose meds', async () => {
+    getDocs.mockResolvedValueOnce({
+      docs: [
+        { id: 'med2', data: () => ({ name: 'Metformin', dosage: '500mg' }) },
+      ],
+    });
+    getDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ med2: [true, false] }),
+    });
+    getDoc.mockResolvedValue({ exists: () => false, data: () => ({}) });
+
+    const history = await getMedicationHistory(1);
+    expect(history[0].entries).toHaveLength(2);
+    expect(history[0].entries[0].name).toBe('Metformin · 1/2');
+    expect(history[0].entries[1].name).toBe('Metformin · 2/2');
+    expect(history[0].entries[0].taken).toBe(true);
+    expect(history[0].entries[1].taken).toBe(false);
+  });
+
+  it('handles legacy boolean (not array) adherence data', async () => {
+    getDocs.mockResolvedValueOnce({
+      docs: [{ id: 'med1', data: () => ({ name: 'Aspirin', dosage: '100mg' }) }],
+    });
+    getDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ med1: true }), // legacy boolean
+    });
+    getDoc.mockResolvedValue({ exists: () => false, data: () => ({}) });
+
+    const history = await getMedicationHistory(1);
+    expect(history[0].entries[0]).toMatchObject({ name: 'Aspirin', taken: true });
+  });
+
+  it('omits dates with no adherence entries', async () => {
+    getDocs.mockResolvedValueOnce({ docs: [] });
+    getDoc.mockResolvedValue({ exists: () => false, data: () => ({}) });
+
+    const history = await getMedicationHistory(3);
+    expect(history).toHaveLength(0);
   });
 });

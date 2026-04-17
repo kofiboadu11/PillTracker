@@ -5,6 +5,7 @@ import {
   cancelMedNotifications,
   cancelAllNotifications,
   snoozeMedNotification,
+  scheduleRefillNotification,
   SOUND_OPTIONS,
 } from '../../utils/notifications';
 
@@ -131,6 +132,34 @@ describe('cancelAllNotifications', () => {
   it('calls cancelAllScheduledNotificationsAsync', async () => {
     await cancelAllNotifications();
     expect(mockCancelAll).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─── scheduleRefillNotification ─────────────────────────────────────────────
+
+describe('scheduleRefillNotification', () => {
+  it('schedules a notification and includes med name in body', async () => {
+    mockSchedule.mockResolvedValue('refill-id');
+    await scheduleRefillNotification('Aspirin', 3, 9);
+    expect(mockSchedule).toHaveBeenCalledTimes(1);
+    const { title, body } = mockSchedule.mock.calls[0][0].content;
+    expect(title).toContain('Refill');
+    expect(body).toContain('Aspirin');
+    expect(body).toContain('3');
+  });
+
+  it('uses out-of-pills message when daysRemaining is 0', async () => {
+    mockSchedule.mockResolvedValue('out-id');
+    await scheduleRefillNotification('Metformin', 0, 0);
+    const body = mockSchedule.mock.calls[0][0].content.body;
+    expect(body).toMatch(/out of/i);
+  });
+
+  it('fires after 2 seconds', async () => {
+    mockSchedule.mockResolvedValue('timer-id');
+    await scheduleRefillNotification('Lisinopril', 5, 15);
+    const trigger = mockSchedule.mock.calls[0][0].trigger;
+    expect(trigger.seconds).toBe(2);
   });
 });
 

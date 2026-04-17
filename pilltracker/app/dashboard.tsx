@@ -16,8 +16,9 @@ import {
 import { cancelMedNotifications } from '../utils/notifications';
 import { useTheme } from '../utils/theme';
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.35;
+const SCREEN_WIDTH   = Dimensions.get('window').width;
+const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.4;  // full-swipe auto-delete
+const DELETE_WIDTH    = 80;                   // revealed delete button width
 
 // ─── Skeleton Pulse ───────────────────────────────────────────────────────────
 function SkeletonPulse({ style }: { style: any }) {
@@ -72,28 +73,93 @@ function SwipeableMedCard({
   onDelete: () => void;
   colors: any;
 }) {
-  const translateX = useRef(new Animated.Value(0)).current;
-  const slideIn    = useRef(new Animated.Value(30)).current;
-  const fadeIn     = useRef(new Animated.Value(0)).current;
+  const translateX  = useRef(new Animated.Value(0)).current;
+  const slideIn     = useRef(new Animated.Value(30)).current;
+  const fadeIn      = useRef(new Animated.Value(0)).current;
+  // Track committed position so multi-gesture swipes start from the right offset
+  const committedX  = useRef(0);
+  // Always-fresh refs so PanResponder never holds stale closures
+  const onDeleteRef = useRef(onDelete);
+  useEffect(() => { onDeleteRef.current = onDelete; });
+  const medNameRef  = useRef(med.name);
+  useEffect(() => { medNameRef.current = med.name; });
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(fadeIn,  { toValue: 1, duration: 350, useNativeDriver: true }),
-      Animated.timing(slideIn, { toValue: 0, duration: 350, useNativeDriver: true }),
+      Animated.timing(fadeIn,  { toValue: 1, duration: 300, useNativeDriver: true }),
+      Animated.timing(slideIn, { toValue: 0, duration: 300, useNativeDriver: true }),
     ]).start();
   }, []);
 
+  const snapClose = () => {
+    Animated.spring(translateX, {
+      toValue: 0, useNativeDriver: true, speed: 30, bounciness: 0,
+    }).start(() => { committedX.current = 0; });
+  };
+
+  const snapOpen = () => {
+    Animated.spring(translateX, {
+      toValue: -DELETE_WIDTH, useNativeDriver: true, speed: 30, bounciness: 0,
+    }).start(() => { committedX.current = -DELETE_WIDTH; });
+  };
+
+  // Show Alert FIRST — only animate off-screen after user confirms delete.
+  // This fixes the bug where Cancel left the card stuck off-screen.
+  const requestDeleteRef = useRef(() => {});
+  requestDeleteRef.current = () => {
+    snapOpen(); // ensure delete button is visible while alert is shown
+    Alert.alert(
+      'Delete Medication',
+      `Remove ${medNameRef.current} from your medications?`,
+      [
+        { text: 'Cancel', style: 'cancel', onPress: () => snapClose() },
+        {
+          text: 'Delete', style: 'destructive',
+          onPress: () => {
+            Animated.timing(translateX, {
+              toValue: -SCREEN_WIDTH, duration: 200, useNativeDriver: true,
+            }).start(() => onDeleteRef.current());
+          },
+        },
+      ]
+    );
+  };
+
   const panResponder = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 8 && Math.abs(g.dy) < 20,
-      onPanResponderMove: (_, g) => { if (g.dx < 0) translateX.setValue(g.dx); },
+      onStartShouldSetPanResponder: () => false,
+      // Claim gesture only for clear horizontal swipes
+      onMoveShouldSetPanResponder: (_, g) =>
+        Math.abs(g.dx) > 8 && Math.abs(g.dy) < 10,
+      // Don't let ScrollView steal the gesture once we've claimed it
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        // Set offset so g.dx is relative to current committed position
+        translateX.stopAnimation();
+        translateX.setOffset(committedX.current);
+        translateX.setValue(0);
+      },
+      onPanResponderMove: (_, g) => {
+        // Clamp: no further right than 0, no further left than off-screen
+        const desired = committedX.current + g.dx;
+        const clamped = Math.max(-SCREEN_WIDTH, Math.min(0, desired));
+        translateX.setValue(clamped - committedX.current);
+      },
       onPanResponderRelease: (_, g) => {
-        if (g.dx < -SWIPE_THRESHOLD) {
-          Animated.timing(translateX, { toValue: -SCREEN_WIDTH, duration: 250, useNativeDriver: true })
-            .start(() => onDelete());
+        translateX.flattenOffset();
+        const finalX = Math.max(-SCREEN_WIDTH, Math.min(0, committedX.current + g.dx));
+        committedX.current = finalX; // update before spring so callbacks are accurate
+        if (finalX < -SWIPE_THRESHOLD) {
+          requestDeleteRef.current();
+        } else if (finalX < -(DELETE_WIDTH / 2)) {
+          snapOpen();
         } else {
-          Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
+          snapClose();
         }
+      },
+      onPanResponderTerminate: () => {
+        translateX.flattenOffset();
+        snapClose();
       },
     })
   ).current;
@@ -104,11 +170,18 @@ function SwipeableMedCard({
 
   return (
     <View style={{ overflow: 'hidden', borderRadius: 16, marginBottom: 0 }}>
-      <View style={s.deleteHint}>
-        <Text style={s.deleteHintText}>🗑️  Delete</Text>
-      </View>
+      {/* Delete button — only on the right, exactly DELETE_WIDTH wide */}
+      <TouchableOpacity
+        style={s.deleteHint}
+        onPress={() => requestDeleteRef.current()}
+        activeOpacity={0.8}
+      >
+        <Text style={s.deleteHintIcon}>🗑️</Text>
+        <Text style={s.deleteHintText}>Delete</Text>
+      </TouchableOpacity>
+
       <Animated.View
-        style={{ transform: [{ translateX }], opacity: fadeIn, translateY: slideIn }}
+        style={{ transform: [{ translateX }, { translateY: slideIn }], opacity: fadeIn }}
         {...panResponder.panHandlers}
       >
         <View style={[
@@ -463,11 +536,12 @@ const cardStyles = (c: ReturnType<typeof useTheme>['colors']) => StyleSheet.crea
   editButton:      { width: 32, height: 32, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
   editIcon:        { fontSize: 16 },
   deleteHint: {
-    position: 'absolute', top: 0, bottom: 0, right: 0, left: 0,
+    position: 'absolute', top: 0, bottom: 0, right: 0, width: DELETE_WIDTH,
     backgroundColor: '#ef4444', borderRadius: 16,
-    justifyContent: 'center', alignItems: 'flex-end', paddingRight: 24,
+    justifyContent: 'center', alignItems: 'center', gap: 2,
   },
-  deleteHintText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  deleteHintIcon: { fontSize: 18 },
+  deleteHintText: { color: '#fff', fontWeight: '700', fontSize: 12 },
 });
 
 const skeletonStyles = (c: ReturnType<typeof useTheme>['colors']) => StyleSheet.create({

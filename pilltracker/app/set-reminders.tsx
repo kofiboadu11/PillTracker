@@ -166,12 +166,19 @@ export default function SetRemindersScreen() {
   return (
     <SafeAreaView style={s.container}>
       <ScrollView contentContainerStyle={s.scroll}>
+        <TouchableOpacity onPress={() => router.back()} style={s.backButton}>
+          <Text style={s.backText}>← Back</Text>
+        </TouchableOpacity>
         <Text style={s.title}>🔔 Set Reminders</Text>
 
-        <View style={s.medCard}>
-          <Text style={s.medName}>{name} — {dosage}</Text>
-          <Text style={s.medFreq}>{frequency}</Text>
-        </View>
+        {(name || dosage) ? (
+          <View style={s.medCard}>
+            <Text style={s.medName}>
+              {[name, dosage].filter(Boolean).join(' — ')}
+            </Text>
+            {frequency ? <Text style={s.medFreq}>{frequency}</Text> : null}
+          </View>
+        ) : null}
 
         {/* ── Time Slots ── */}
         <Text style={s.sectionTitle}>Reminder Times</Text>
@@ -302,6 +309,8 @@ export default function SetRemindersScreen() {
 const makeStyles = (c: ReturnType<typeof useTheme>['colors']) => StyleSheet.create({
   container:  { flex: 1, backgroundColor: c.background },
   scroll:     { padding: 24, gap: 16 },
+  backButton: { alignSelf: 'flex-start', paddingVertical: 4, marginBottom: 4 },
+  backText:   { fontSize: 16, color: c.textSecondary, fontWeight: '500' },
   title:      { fontSize: 26, fontWeight: 'bold', color: c.text },
   medCard:    { backgroundColor: c.card, borderRadius: 12, padding: 16, gap: 4 },
   medName:    { fontSize: 16, fontWeight: '600', color: c.text },

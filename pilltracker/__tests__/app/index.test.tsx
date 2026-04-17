@@ -24,12 +24,12 @@ describe('WelcomeScreen', () => {
 
   it('renders the tagline', () => {
     const { getByText } = renderScreen();
-    expect(getByText(/companion/i)).toBeTruthy();
+    expect(getByText('Never miss a dose again')).toBeTruthy();
   });
 
   it('renders the Get Started button', () => {
     const { getByText } = renderScreen();
-    expect(getByText('Get Started')).toBeTruthy();
+    expect(getByText(/get started/i)).toBeTruthy();
   });
 
   it('renders the Log in link', () => {

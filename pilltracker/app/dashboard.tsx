@@ -16,9 +16,82 @@ import {
 import { cancelMedNotifications } from '../utils/notifications';
 import { useTheme } from '../utils/theme';
 
-const SCREEN_WIDTH   = Dimensions.get('window').width;
-const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.4;  // full-swipe auto-delete
-const DELETE_WIDTH    = 80;                   // revealed delete button width
+const SCREEN_WIDTH    = Dimensions.get('window').width;
+const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.4;
+const DELETE_WIDTH    = 80;
+
+// ─── Next-Dose Countdown ──────────────────────────────────────────────────────
+
+/** Parse "8:00 AM" / "8:00 PM" → minutes since midnight */
+function timeToMinutes(timeStr: string): number {
+  const [timePart, period] = timeStr.split(' ');
+  let [h, m] = timePart.split(':').map(Number);
+  if (period === 'PM' && h !== 12) h += 12;
+  if (period === 'AM' && h === 12) h = 0;
+  return h * 60 + m;
+}
+
+/** Returns "Xh Ym", "Xm", or "Due now" given a minutes-remaining value */
+function formatCountdown(minutesLeft: number): string {
+  if (minutesLeft <= 0) return 'Due now';
+  const h = Math.floor(minutesLeft / 60);
+  const m = minutesLeft % 60;
+  if (h > 0 && m > 0) return `${h}h ${m}m`;
+  if (h > 0) return `${h}h`;
+  return `${m}m`;
+}
+
+/**
+ * Returns { label, minutesLeft } for the next upcoming dose time.
+ * Re-computes every 60 s. Returns null when no times are set.
+ */
+function useNextDose(times: string[]): { label: string; minutesLeft: number } | null {
+  const compute = () => {
+    if (!times.length) return null;
+    const now = new Date();
+    const nowMins = now.getHours() * 60 + now.getMinutes();
+    const sorted = times.map(timeToMinutes).sort((a, b) => a - b);
+    // Find the next time that is still in the future today
+    const next = sorted.find(t => t > nowMins);
+    const minutesLeft = next !== undefined
+      ? next - nowMins
+      : sorted[0] + (24 * 60 - nowMins); // wrap to tomorrow's first dose
+    return { label: formatCountdown(minutesLeft), minutesLeft };
+  };
+
+  const [state, setState] = React.useState(compute);
+
+  useEffect(() => {
+    setState(compute());
+    const interval = setInterval(() => setState(compute()), 60_000);
+    return () => clearInterval(interval);
+  }, [times.join(',')]);
+
+  return state;
+}
+
+/** Badge shown on the card — green when >1h away, amber <1h, red when due */
+function CountdownBadge({ times, taken }: { times: string[]; taken: boolean | undefined }) {
+  const next = useNextDose(times);
+  if (!next || taken === true) return null; // hide once the dose is marked taken
+
+  const color = next.minutesLeft <= 0   ? '#ef4444'
+              : next.minutesLeft <= 60  ? '#f59e0b'
+              : '#22c55e';
+
+  return (
+    <View style={{
+      flexDirection: 'row', alignItems: 'center', gap: 4,
+      backgroundColor: color + '18', borderRadius: 8,
+      paddingHorizontal: 7, paddingVertical: 3, marginTop: 5, alignSelf: 'flex-start',
+    }}>
+      <Text style={{ fontSize: 11 }}>⏱</Text>
+      <Text style={{ fontSize: 11, fontWeight: '700', color }}>
+        {next.minutesLeft <= 0 ? 'Due now' : `Next dose in ${next.label}`}
+      </Text>
+    </View>
+  );
+}
 
 // ─── Skeleton Pulse ───────────────────────────────────────────────────────────
 function SkeletonPulse({ style }: { style: any }) {
@@ -197,6 +270,7 @@ function SwipeableMedCard({
               {med.dosage}
               {allTimes.length > 0 ? ' · ' + allTimes.join(' · ') : ''}
             </Text>
+            <CountdownBadge times={allTimes} taken={taken} />
             {refillStatus?.shouldAlert && (
               <RefillBadge daysRemaining={refillStatus.daysRemaining} />
             )}

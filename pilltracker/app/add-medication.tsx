@@ -11,10 +11,86 @@ import { checkDrugInteractions, severityColor, severityLabel, type DrugInteracti
 import { useTheme } from '../utils/theme';
 
 const FREQUENCIES = ['Daily', 'Weekly', 'As needed'];
-const FORMS = ['Tablet', 'Capsule', 'Liquid', 'Injection'];
+const FORMS = [
+  { label: 'Tablet',    icon: '💊' },
+  { label: 'Capsule',   icon: '💉' },
+  { label: 'Liquid',    icon: '🧪' },
+  { label: 'Injection', icon: '💉' },
+  { label: 'Patch',     icon: '🩹' },
+  { label: 'Inhaler',   icon: '💨' },
+  { label: 'Drops',     icon: '💧' },
+  { label: 'Other',     icon: '📦' },
+];
 const DOSAGE_REGEX = /^\d+(\.\d+)?\s*(mg|ml|mcg|g|iu|units?|drops?|puffs?|%)/i;
 
 type Errors = { name?: string; dosage?: string };
+
+// ─── Form Picker (bottom-sheet modal) ────────────────────────────────────────
+function FormPicker({
+  value, onChange, colors,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  colors: any;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = FORMS.find(f => f.label === value) ?? FORMS[0];
+
+  return (
+    <>
+      <TouchableOpacity
+        onPress={() => setOpen(true)}
+        style={{
+          borderWidth: 1, borderColor: colors.inputBorder, borderRadius: 10,
+          padding: 14, backgroundColor: colors.inputBg,
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        }}
+        activeOpacity={0.7}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={{ fontSize: 18 }}>{selected.icon}</Text>
+          <Text style={{ fontSize: 16, color: colors.text, fontWeight: '500' }}>{selected.label}</Text>
+        </View>
+        <Text style={{ fontSize: 12, color: colors.textMuted }}>▼</Text>
+      </TouchableOpacity>
+
+      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
+        <TouchableOpacity
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }}
+          activeOpacity={1}
+          onPress={() => setOpen(false)}
+        >
+          <View style={{
+            backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+            paddingTop: 12, paddingBottom: 36, paddingHorizontal: 20,
+          }}>
+            {/* Handle bar */}
+            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 16 }} />
+            <Text style={{ fontSize: 17, fontWeight: '700', color: colors.text, marginBottom: 12 }}>Select Form</Text>
+
+            {FORMS.map(f => (
+              <TouchableOpacity
+                key={f.label}
+                onPress={() => { onChange(f.label); setOpen(false); }}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 14,
+                  paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border,
+                }}
+                activeOpacity={0.6}
+              >
+                <Text style={{ fontSize: 22 }}>{f.icon}</Text>
+                <Text style={{ fontSize: 16, color: colors.text, flex: 1 }}>{f.label}</Text>
+                {value === f.label && (
+                  <Text style={{ fontSize: 18, color: colors.primary }}>✓</Text>
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </>
+  );
+}
 
 // ─── Drug Interaction Alert Modal ─────────────────────────────────────────────
 function InteractionModal({
@@ -285,17 +361,7 @@ export default function AddMedicationScreen() {
           {/* ── Form ── */}
           <View style={s.halfWidth}>
             <Text style={s.label}>Form</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {FORMS.map(f => (
-                <TouchableOpacity
-                  key={f}
-                  style={[s.chip, form === f && s.chipSelected]}
-                  onPress={() => setForm(f)}
-                >
-                  <Text style={[s.chipText, form === f && s.chipTextSelected]}>{f}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            <FormPicker value={form} onChange={setForm} colors={colors} />
           </View>
         </View>
 
